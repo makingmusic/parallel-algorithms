@@ -10,10 +10,13 @@ Algorithms included:
 - Quick Sort
 - Merge Sort
 - Heap Sort
+- MLX Sort (PyTorch MPS/MLX, includes host-to-device transfer)
+- MLX Sort (PyTorch MPS/MLX, preloaded to device)
 """
 
 import time
 import torch
+import polars as pl
 from typing import List, Tuple, Any
 
 # =============================================================================
@@ -28,6 +31,7 @@ MERGE_SORT = "MERGE_SORT"
 HEAP_SORT = "HEAP_SORT"
 MLX_SORT = "mlx_sort"
 MLX_SORT_PRELOAD_TO_MEMORY = "mlx_sort_preload_to_memory"
+POLAR_SORT = "POLAR_SORT"
 
 # Display names for user-friendly output
 ALGORITHM_DISPLAY_NAMES = {
@@ -37,7 +41,8 @@ ALGORITHM_DISPLAY_NAMES = {
     MERGE_SORT: "Merge Sort",
     HEAP_SORT: "Heap Sort",
     MLX_SORT: "MLX Sort (incl. load)",
-    MLX_SORT_PRELOAD_TO_MEMORY: "MLX Sort (preloaded)"
+    MLX_SORT_PRELOAD_TO_MEMORY: "MLX Sort (preloaded)",
+    POLAR_SORT: "Polar Sort"
 }
 
 
@@ -381,6 +386,49 @@ def mlx_sort_preload_to_memory(arr: List[Any]) -> Tuple[List[Any], float]:
     return result_list, end_time - start_time
 
 # =============================================================================
+# POLAR SORT
+# =============================================================================
+
+def polar_sort_impl(arr: List[Any]) -> List[Any]:
+    """
+    Implementation of parallel sort using Polars library.
+    
+    Polars provides multi-core sorting under the hood using Rust's efficient
+    sorting algorithms. This leverages parallel processing capabilities
+    for improved performance on large datasets.
+    
+    Time Complexity: O(n log n) average case
+    Space Complexity: O(n)
+    
+    Args:
+        arr: Input array to sort
+        
+    Returns:
+        Sorted array
+    """
+    # Convert Python list to Polars Series
+    series = pl.Series("values", arr)
+    
+    # Sort the series (multi-core under the hood)
+    sorted_series = series.sort()
+    
+    # Convert back to Python list
+    return sorted_series.to_list()
+
+
+def polar_sort(arr: List[Any]) -> Tuple[List[Any], float]:
+    """
+    Polars-based parallel sort with timing measurement.
+    
+    Args:
+        arr: Input array to sort
+        
+    Returns:
+        Tuple of (sorted_array, execution_time_in_seconds)
+    """
+    return timing_wrapper(polar_sort_impl, arr)
+
+# =============================================================================
 # ALGORITHM REGISTRY
 # =============================================================================
 
@@ -392,7 +440,8 @@ SORTING_ALGORITHMS = {
     MERGE_SORT: merge_sort,
     HEAP_SORT: heap_sort,
     MLX_SORT: mlx_sort,
-    MLX_SORT_PRELOAD_TO_MEMORY: mlx_sort_preload_to_memory
+    MLX_SORT_PRELOAD_TO_MEMORY: mlx_sort_preload_to_memory,
+    POLAR_SORT: polar_sort
 }
 
 
