@@ -10,7 +10,6 @@ networkx==3.5
 numpy==2.3.2
 polars==1.32.3
 psutil==7.0.0
--e file:///Users/makingmusic/code/parallel-algorithms/rust-parallel
 setuptools==80.9.0
 sympy==1.14.0
 torch==2.8.0
