@@ -1,0 +1,35 @@
+[build-system]
+requires = ["maturin>=1.9,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "parallel-algorithms"
+requires-python = ">=3.13"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dynamic = ["version"]
+
+dependencies = [
+    "filelock==3.19.1",
+    "fsspec==2025.7.0",
+    "jinja2==3.1.6",
+    "markupsafe==3.0.2",
+    "mlx==0.28.0",
+    "mlx-metal==0.28.0",
+    "mpmath==1.3.0",
+    "networkx==3.5",
+    "numpy==2.3.2",
+    "polars",
+    "psutil==7.0.0",
+    "setuptools==80.9.0",
+    "sympy==1.14.0",
+    "torch==2.8.0",
+    "typing==3.10.0.0",
+    "typing-extensions==4.14.1",
+    "maturin",
+]
+[tool.maturin]
+features = ["pyo3/extension-module"]

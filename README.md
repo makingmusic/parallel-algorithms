@@ -2,6 +2,68 @@
 
 A Python project for experimenting with algorithms that can operate in parallel, with a focus on sorting algorithms.
 
+## 🚀 Quick Setup (macOS)
+
+**For a fresh MacBook, run this single command:**
+
+```bash
+./setup.sh
+```
+
+This script will automatically:
+- Install Homebrew (if needed)
+- Create a Python virtual environment
+- Install all Python dependencies
+- Install Rust (if needed)
+- Build the Rust extension
+- Verify everything works correctly
+
+**After setup, simply run:**
+```bash
+uv run python main.py      # Run the benchmark
+# Or activate the environment: source .venv/bin/activate
+```
+
+## 📋 Manual Setup (Other Platforms)
+
+If you're not on macOS or prefer manual setup:
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd parallel-algorithms
+   ```
+
+2. **Install uv (Python package manager)**
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   source ~/.cargo/env
+   ```
+
+3. **Set up Python 3.13 and install dependencies**
+   ```bash
+   uv sync --python 3.13
+   ```
+
+4. **Install Rust (for Rust extension)**
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   source ~/.cargo/env
+   ```
+
+5. **Build Rust extension**
+   ```bash
+   pip install maturin
+   cd rust-parallel
+   maturin develop --release
+   cd ..
+   ```
+
+6. **Run the benchmark**
+   ```bash
+   uv run python main.py
+   ```
+
 ## Available Sorting Algorithms
 
 - **Built-in Sort**: Python's native `sorted()` function
@@ -28,24 +90,11 @@ A Python project for experimenting with algorithms that can operate in parallel,
   - Provides detailed performance vs parallelization analysis
   - Helps identify the most efficient algorithms for your hardware
 
-## Installation
-
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### Rust extension requirements (optional for Rust sorter)
-
-- Rust toolchain (`rustup`, `cargo`)
-- maturin (`pip install maturin`)
-
 ## Usage
 
 ### Run the benchmark
 ```bash
-python main.py
+uv run python main.py
 ```
 
 ### Test POLAR_SORT specifically
@@ -91,12 +140,9 @@ The benchmark provides comprehensive analysis including:
 
 ## Requirements
 
-- Python 3.7+
-- polars==0.24.0
-- torch==2.8.0
-- mlx==0.28.0
-- numpy==2.3.2
-- psutil==7.0.0
+- Python 3.13 (managed by uv)
+- uv (Python package manager)
+- All dependencies are automatically managed via pyproject.toml
 
 ## Performance
 
