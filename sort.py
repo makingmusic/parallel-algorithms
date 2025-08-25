@@ -74,6 +74,16 @@ def timing_wrapper(sort_func, arr: List[Any]) -> Tuple[List[Any], float, Dict[st
     """
     return timing_wrapper_with_monitoring(sort_func, arr)
 
+# =============================================================================
+# ADI SORT
+# =============================================================================
+
+def adi_sort_impl(arr: List[Any]) -> List[Any]:
+    """
+    Implementation of Adi sort algorithm.
+    """
+    return arr
+
 
 # =============================================================================
 # BUBBLE SORT
