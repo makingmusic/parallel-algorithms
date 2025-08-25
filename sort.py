@@ -19,6 +19,12 @@ import torch
 import polars as pl
 from typing import List, Tuple, Any
 
+# Try importing the Rust extension module if available
+try:
+    from rust_parallel import rust_parallel_sort as _rust_parallel_sort
+except Exception:
+    _rust_parallel_sort = None
+
 # =============================================================================
 # ALGORITHM CONSTANTS
 # =============================================================================
@@ -32,6 +38,7 @@ HEAP_SORT = "HEAP_SORT"
 MLX_SORT = "mlx_sort"
 MLX_SORT_PRELOAD_TO_MEMORY = "mlx_sort_preload_to_memory"
 POLAR_SORT = "POLAR_SORT"
+RUST_PARALLEL_SORT = "RUST_PARALLEL_SORT"
 
 # Display names for user-friendly output
 ALGORITHM_DISPLAY_NAMES = {
@@ -42,7 +49,8 @@ ALGORITHM_DISPLAY_NAMES = {
     HEAP_SORT: "Heap Sort",
     MLX_SORT: "MLX Sort (incl. load)",
     MLX_SORT_PRELOAD_TO_MEMORY: "MLX Sort (preloaded)",
-    POLAR_SORT: "Polar Sort"
+    POLAR_SORT: "Polar Sort",
+    RUST_PARALLEL_SORT: "Rust Parallel Sort (Rayon)"
 }
 
 
@@ -428,6 +436,29 @@ def polar_sort(arr: List[Any]) -> Tuple[List[Any], float]:
     """
     return timing_wrapper(polar_sort_impl, arr)
 
+
+# =============================================================================
+# RUST PARALLEL SORT (PyO3 + Rayon)
+# =============================================================================
+
+def rust_parallel_sort_impl(arr: List[Any]) -> List[Any]:
+    """
+    Parallel sort implemented in Rust using Rayon, exposed via PyO3.
+
+    Requires the compiled rust_parallel module to be available.
+    """
+    if _rust_parallel_sort is None:
+        raise RuntimeError("rust_parallel module is not built/available. See README for build instructions.")
+    # Ensure integers, as Rust signature is Vec<i64>
+    return _rust_parallel_sort([int(x) for x in arr])
+
+
+def rust_parallel_sort(arr: List[Any]) -> Tuple[List[Any], float]:
+    """
+    Rust parallel sort with timing measurement.
+    """
+    return timing_wrapper(rust_parallel_sort_impl, arr)
+
 # =============================================================================
 # ALGORITHM REGISTRY
 # =============================================================================
@@ -441,7 +472,8 @@ SORTING_ALGORITHMS = {
     HEAP_SORT: heap_sort,
     MLX_SORT: mlx_sort,
     MLX_SORT_PRELOAD_TO_MEMORY: mlx_sort_preload_to_memory,
-    POLAR_SORT: polar_sort
+    POLAR_SORT: polar_sort,
+    RUST_PARALLEL_SORT: rust_parallel_sort
 }
 
 

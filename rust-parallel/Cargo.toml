@@ -1,0 +1,22 @@
+[package]
+name = "rust_parallel"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rust_parallel"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
+rayon = "1.10"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+
+[package.metadata.maturin]
+name = "rust_parallel"
+
+

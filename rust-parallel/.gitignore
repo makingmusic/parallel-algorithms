@@ -1,0 +1,46 @@
+# === Rust build output ===
+/target/
+**/*.rs.bk
+
+# === Cargo specific ===
+Cargo.lock
+# (keep Cargo.lock if this is a binary project; ignore if it's a library crate)
+
+# === PyO3 / Python extension specific ===
+*.so
+*.dylib
+*.dll
+*.pyd
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+
+# === IDE / Editor files ===
+# VSCode
+.vscode/
+# IntelliJ / CLion / RustRover
+.idea/
+# Sublime
+*.sublime-workspace
+*.sublime-project
+
+# === OS junk ===
+.DS_Store
+Thumbs.db
+
+# === Logs and backups ===
+*.log
+*.swp
+*.swo
+*~
+
+# === Environment / tooling ===
+.env
+*.local
+
+# === Maturin build artifacts ===
+wheels/
+*.whl

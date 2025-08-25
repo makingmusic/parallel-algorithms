@@ -12,6 +12,7 @@ A Python project for experimenting with algorithms that can operate in parallel,
 - **MLX Sort**: GPU-accelerated sorting using PyTorch MLX/MPS
 - **MLX Sort (preloaded)**: GPU sorting with preloaded data
 - **Polar Sort**: Multi-core parallel sorting using Polars library
+- **Rust Parallel Sort (Rayon)**: True parallel sort via Rust + PyO3
 
 ## Features
 
@@ -28,6 +29,11 @@ A Python project for experimenting with algorithms that can operate in parallel,
    ```bash
    pip install -r requirements.txt
    ```
+
+### Rust extension requirements (optional for Rust sorter)
+
+- Rust toolchain (`rustup`, `cargo`)
+- maturin (`pip install maturin`)
 
 ## Usage
 
@@ -60,6 +66,19 @@ CONFIG = {
 - mlx==0.28.0
 - numpy==2.3.2
 - psutil==7.0.0
+
+### Build the Rust + PyO3 + Rayon sorter
+
+The Rust extension lives in `rust-parallel/` and exposes `rust_parallel_sort()`.
+
+Build and install into your active environment:
+
+```bash
+cd rust-parallel
+maturin develop --release
+```
+
+After this, the Python code can import `rust_parallel` and the algorithm `RUST_PARALLEL_SORT` becomes available.
 
 ## Performance
 
