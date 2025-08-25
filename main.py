@@ -2,14 +2,22 @@ import time
 import random
 import psutil
 import os
-from sort import SORTING_ALGORITHMS, get_available_algorithms, get_display_name, BUILT_IN_SORT, QUICK_SORT
+from sort import (
+    SORTING_ALGORITHMS,
+    get_available_algorithms,
+    get_display_name,
+    BUILT_IN_SORT,
+    QUICK_SORT,
+    MLX_SORT,
+    MLX_SORT_PRELOAD_TO_MEMORY,
+)
 from utils import create_unsorted_list, get_memory_usage, cleanup_memory
 
 CONFIG = {
     "list_size": 1_000_000,
     # List of algorithm constants to test. If None, all algorithms will be tested.
-    # Available constants: BUILT_IN_SORT, QUICK_SORT, BUBBLE_SORT, MERGE_SORT, HEAP_SORT
-    "algorithms_to_test": [BUILT_IN_SORT, QUICK_SORT],  # Set to None to test all, or specify a list like [QUICK_SORT, MERGE_SORT]
+    # Available constants: BUILT_IN_SORT, QUICK_SORT, BUBBLE_SORT, MERGE_SORT, HEAP_SORT, mlx_sort, mlx_sort_preload_to_memory
+    "algorithms_to_test": [BUILT_IN_SORT, QUICK_SORT, MLX_SORT, MLX_SORT_PRELOAD_TO_MEMORY],  # Set to None to test all
 }
 
 def benchmark_sorting_algorithms():
@@ -69,22 +77,26 @@ def benchmark_sorting_algorithms():
 
 def print_results_table(results):
     """Print results in a formatted table"""
-    print("\n" + "=" * 80)
+    print("\n" + "=" * 100)
     print("SORTING ALGORITHM BENCHMARK RESULTS")
-    print("=" * 80)
+    print("=" * 100)
     
-    # Table header
-    print(f"{'Algorithm':<15} {'Time (s)':<12} {'Memory (MB)':<15} {'Status':<10}")
-    print("-" * 80)
+    # Calculate column widths based on content
+    max_algorithm_len = max(len(result['algorithm']) for result in results)
+    algorithm_width = max(25, max_algorithm_len + 2)
+    
+    # Table header with proper spacing
+    print(f"{'Algorithm':<{algorithm_width}} {'Time (s)':<12} {'Memory (MB)':<15} {'Status':<12}")
+    print("-" * 100)
     
     # Sort results by execution time
     sorted_results = sorted(results, key=lambda x: x['time'])
     
     for result in sorted_results:
         status = "✓ Sorted" if result['sorted'] else "✗ Failed"
-        print(f"{result['algorithm']:<15} {result['time']:<12.4f} {result['memory']:<15.2f} {status:<10}")
+        print(f"{result['algorithm']:<{algorithm_width}} {result['time']:<12.4f} {result['memory']:<15.2f} {status:<12}")
     
-    print("-" * 80)
+    print("-" * 100)
     
     # Summary
     fastest = min(results, key=lambda x: x['time'])

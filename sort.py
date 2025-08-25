@@ -13,6 +13,7 @@ Algorithms included:
 """
 
 import time
+import torch
 from typing import List, Tuple, Any
 
 # =============================================================================
@@ -25,6 +26,8 @@ BUILT_IN_SORT = "BUILT_IN_SORT"
 QUICK_SORT = "QUICK_SORT"
 MERGE_SORT = "MERGE_SORT"
 HEAP_SORT = "HEAP_SORT"
+MLX_SORT = "mlx_sort"
+MLX_SORT_PRELOAD_TO_MEMORY = "mlx_sort_preload_to_memory"
 
 # Display names for user-friendly output
 ALGORITHM_DISPLAY_NAMES = {
@@ -32,7 +35,9 @@ ALGORITHM_DISPLAY_NAMES = {
     BUILT_IN_SORT: "Built-in Sort",
     QUICK_SORT: "Quick Sort",
     MERGE_SORT: "Merge Sort",
-    HEAP_SORT: "Heap Sort"
+    HEAP_SORT: "Heap Sort",
+    MLX_SORT: "MLX Sort (incl. load)",
+    MLX_SORT_PRELOAD_TO_MEMORY: "MLX Sort (preloaded)"
 }
 
 
@@ -309,6 +314,73 @@ def heap_sort(arr: List[Any]) -> Tuple[List[Any], float]:
 
 
 # =============================================================================
+# MLX/MPS TORCH SORT
+# =============================================================================
+
+def _get_mlx_torch_device() -> torch.device:
+    """
+    Resolve the MLX/MPS device on Apple Silicon; fallback to CPU if unavailable.
+    """
+    try:
+        if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            return torch.device("mps")
+    except Exception:
+        pass
+    return torch.device("cpu")
+
+
+def _mps_synchronize_if_needed(device: torch.device) -> None:
+    """Synchronize MPS device for accurate timing when using asynchronous ops."""
+    if device.type == "mps":
+        try:
+            torch.mps.synchronize()
+        except Exception:
+            # Best-effort; if synchronize fails, continue
+            pass
+
+
+def mlx_sort(arr: List[Any]) -> Tuple[List[Any], float]:
+    """
+    Torch-based sort on MLX/MPS including CPU->GPU transfer time.
+
+    - Measures time for: host->device transfer + sort + device->host transfer.
+    """
+    device = _get_mlx_torch_device()
+    with torch.no_grad():
+        start_time = time.time()
+        cpu_tensor = torch.tensor(arr, dtype=torch.float32)
+        tensor = cpu_tensor.to(device)  # include H2D transfer in timing
+        _mps_synchronize_if_needed(device)
+        sorted_tensor, _ = torch.sort(tensor)
+        _mps_synchronize_if_needed(device)
+        end_time = time.time()
+        # Transfer result back to CPU outside timing window
+        result_list = sorted_tensor.to("cpu").tolist()
+    return result_list, end_time - start_time
+
+
+def mlx_sort_preload_to_memory(arr: List[Any]) -> Tuple[List[Any], float]:
+    """
+    Torch-based sort on MLX/MPS excluding CPU->GPU transfer time.
+
+    - Preloads data to device prior to timing.
+    - Measures time for: sort + device->host transfer only.
+    """
+    device = _get_mlx_torch_device()
+    with torch.no_grad():
+        # Preload to device, not counted in timing
+        preload_tensor = torch.tensor(arr, dtype=torch.float32).to(device)
+        _mps_synchronize_if_needed(device)
+
+        start_time = time.time()
+        sorted_tensor, _ = torch.sort(preload_tensor)
+        _mps_synchronize_if_needed(device)
+        end_time = time.time()
+        # Transfer result back to CPU outside timing window
+        result_list = sorted_tensor.to("cpu").tolist()
+    return result_list, end_time - start_time
+
+# =============================================================================
 # ALGORITHM REGISTRY
 # =============================================================================
 
@@ -318,7 +390,9 @@ SORTING_ALGORITHMS = {
     BUILT_IN_SORT: built_in_sort,
     QUICK_SORT: quick_sort,
     MERGE_SORT: merge_sort,
-    HEAP_SORT: heap_sort
+    HEAP_SORT: heap_sort,
+    MLX_SORT: mlx_sort,
+    MLX_SORT_PRELOAD_TO_MEMORY: mlx_sort_preload_to_memory
 }
 
 
