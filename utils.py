@@ -31,6 +31,58 @@ def get_memory_usage():
     process = psutil.Process(os.getpid())
     return process.memory_info().rss / 1024 / 1024
 
+def track_memory_usage(duration: float, sample_interval: float = 0.01) -> Dict[str, float]:
+    """
+    Track memory usage during algorithm execution.
+    
+    Args:
+        duration: How long to monitor (seconds)
+        sample_interval: How often to sample memory usage (seconds) - default 0.01s for more accuracy
+        
+    Returns:
+        Dictionary with memory utilization metrics
+    """
+    memory_samples = []
+    stop_monitoring = threading.Event()
+    
+    def memory_monitor():
+        while not stop_monitoring.is_set():
+            try:
+                memory_mb = get_memory_usage()
+                memory_samples.append(memory_mb)
+                time.sleep(sample_interval)
+            except Exception:
+                break
+    
+    # Start monitoring in background thread
+    monitor_thread = threading.Thread(target=memory_monitor, daemon=True)
+    monitor_thread.start()
+    
+    # Wait for specified duration
+    time.sleep(duration)
+    stop_monitoring.set()
+    monitor_thread.join(timeout=1.0)
+    
+    if not memory_samples:
+        return {
+            'peak_memory_mb': 0.0,
+            'avg_memory_mb': 0.0,
+            'memory_increase_mb': 0.0
+        }
+    
+    # Calculate metrics
+    peak_memory = max(memory_samples)
+    avg_memory = sum(memory_samples) / len(memory_samples)
+    initial_memory = memory_samples[0] if memory_samples else 0
+    memory_increase = peak_memory - initial_memory
+    
+    return {
+        'peak_memory_mb': peak_memory,
+        'avg_memory_mb': avg_memory,
+        'memory_increase_mb': memory_increase,
+        'sample_count': len(memory_samples)
+    }
+
 def cleanup_memory():
     """Perform memory cleanup and garbage collection"""
     # Force garbage collection
@@ -147,4 +199,69 @@ def timing_wrapper_with_cpu_monitoring(sort_func, arr: List, monitor_duration: f
         cpu_metrics = monitor_cpu_usage(execution_time)
     
     return sorted_arr, execution_time, cpu_metrics
+
+def timing_wrapper_with_monitoring(sort_func, arr: List, monitor_duration: float = None) -> Tuple[List, float, Dict[str, float]]:
+    """
+    Enhanced timing wrapper that monitors both CPU and memory usage during execution.
+    
+    Args:
+        sort_func: The sorting function to wrap
+        arr: Input array to sort
+        monitor_duration: How long to monitor (if None, monitors for full execution)
+        
+    Returns:
+        Tuple of (sorted_array, execution_time_in_seconds, metrics_dict)
+    """
+    # Start memory monitoring before algorithm execution
+    memory_samples = []
+    stop_monitoring = threading.Event()
+    
+    def memory_monitor():
+        while not stop_monitoring.is_set():
+            try:
+                memory_mb = get_memory_usage()
+                memory_samples.append(memory_mb)
+                time.sleep(0.01)  # Sample every 10ms for accuracy
+            except Exception:
+                break
+    
+    # Start memory monitoring in background thread
+    memory_thread = threading.Thread(target=memory_monitor, daemon=True)
+    memory_thread.start()
+    
+    # Small delay to ensure monitoring starts
+    time.sleep(0.01)
+    
+    # Run the sorting algorithm
+    start_time = time.time()
+    sorted_arr = sort_func(arr.copy())
+    end_time = time.time()
+    execution_time = end_time - start_time
+    
+    # Stop memory monitoring
+    stop_monitoring.set()
+    memory_thread.join(timeout=1.0)
+    
+    # Calculate memory metrics
+    if memory_samples:
+        peak_memory = max(memory_samples)
+        avg_memory = sum(memory_samples) / len(memory_samples)
+        initial_memory = memory_samples[0] if memory_samples else 0
+        memory_increase = peak_memory - initial_memory
+    else:
+        peak_memory = avg_memory = memory_increase = 0.0
+    
+    # Monitor CPU usage
+    cpu_metrics = monitor_cpu_usage(execution_time)
+    
+    # Combine metrics
+    combined_metrics = {
+        **cpu_metrics,
+        'peak_memory_mb': peak_memory,
+        'avg_memory_mb': avg_memory,
+        'memory_increase_mb': memory_increase,
+        'sample_count': len(memory_samples)
+    }
+    
+    return sorted_arr, execution_time, combined_metrics
 

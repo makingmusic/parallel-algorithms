@@ -20,6 +20,7 @@ from utils import create_unsorted_list, get_memory_usage, cleanup_memory, get_cp
 
 CONFIG = {
     "list_size": 10_000_000,
+    "list_size": 1_000_000,
     # List of algorithm constants to test. If None, all algorithms will be tested.
     # Available constants: BUILT_IN_SORT, QUICK_SORT, BUBBLE_SORT, MERGE_SORT, HEAP_SORT, mlx_sort, mlx_sort_preload_to_memory, POLAR_SORT
     "algorithms_to_test": [
@@ -76,17 +77,25 @@ def benchmark_sorting_algorithms():
 
         # Clean up memory before each benchmark
         cleanup_memory()
-
-        # Measure initial memory
-        initial_memory = get_memory_usage()
-
-        # Run the sorting algorithm
-        sorted_list, execution_time, cpu_metrics = algorithm(unsorted_list)
-
-        # Measure final memory
-        final_memory = get_memory_usage()
-        memory_used = final_memory - initial_memory
-
+        
+        # Run the sorting algorithm (includes memory tracking)
+        sorted_list, execution_time, metrics = algorithm(unsorted_list)
+        
+        # Extract memory and CPU metrics
+        memory_increase = metrics.get('memory_increase_mb', 0.0)
+        peak_memory = metrics.get('peak_memory_mb', 0.0)
+        
+        # Use memory increase if positive, otherwise show peak memory usage
+        memory_used = memory_increase if memory_increase > 0 else peak_memory
+        
+        # Format memory display to show both peak and increase when relevant
+        if memory_increase > 0 and memory_increase < peak_memory * 0.9:
+            memory_display = f"{peak_memory:.1f}/{memory_increase:.1f}"
+        else:
+            memory_display = f"{memory_used:.1f}"
+        
+        cpu_metrics = {k: v for k, v in metrics.items() if k not in ['peak_memory_mb', 'avg_memory_mb', 'memory_increase_mb', 'sample_count']}
+        
         # Verify the list is sorted
         is_sorted = all(
             sorted_list[i] <= sorted_list[i + 1] for i in range(len(sorted_list) - 1)
@@ -97,6 +106,9 @@ def benchmark_sorting_algorithms():
                 "algorithm": display_name,
                 "time": execution_time,
                 "memory": memory_used,
+            'memory_increase': memory_increase,
+            'peak_memory': peak_memory,
+            'memory_display': memory_display,
                 "sorted": is_sorted,
                 "cpu_metrics": cpu_metrics,
             }
@@ -118,6 +130,8 @@ def print_results_table(results):
     algorithm_width = max(25, max_algorithm_len + 2)
 
     # Table header with proper spacing
+    print(f"{'Algorithm':<{algorithm_width}} {'Time (s)':<12} {'Memory (MB)':<15} {'CPU Eff. (%)':<12} {'Cores Used':<12} {'Status':<12}")
+    print(f"{'':<{algorithm_width}} {'':<12} {'(Peak/Increase)':<15} {'':<12} {'':<12} {'':<12}")
     print(
         f"{'Algorithm':<{algorithm_width}} {'Time (s)':<12} {'Memory (MB)':<15} {'CPU Eff. (%)':<12} {'Cores Used':<12} {'Status':<12}"
     )
@@ -135,7 +149,7 @@ def print_results_table(results):
         cores_used = cpu_metrics.get("cpu_cores_utilized", 0.0)
 
         print(
-            f"{result['algorithm']:<{algorithm_width}} {result['time']:<12.4f} {result['memory']:<15.2f} {cpu_efficiency:<12.1f} {cores_used:<12.1f} {status:<12}"
+            f"{result['algorithm']:<{algorithm_width}} {result['time']:<12.4f} {result['memory_display']:<15} {cpu_efficiency:<12.1f} {cores_used:<12.1f} {status:<12}"
         )
 
     print("-" * 120)

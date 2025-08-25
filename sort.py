@@ -25,8 +25,8 @@ try:
 except Exception:
     _rust_parallel_sort = None
 
-# Import CPU monitoring utilities
-from utils import timing_wrapper_with_cpu_monitoring
+# Import CPU and memory monitoring utilities
+from utils import timing_wrapper_with_monitoring
 
 # =============================================================================
 # ALGORITHM CONSTANTS
@@ -63,16 +63,16 @@ ALGORITHM_DISPLAY_NAMES = {
 
 def timing_wrapper(sort_func, arr: List[Any]) -> Tuple[List[Any], float, Dict[str, float]]:
     """
-    Generic timing wrapper for sorting functions with CPU monitoring.
+    Generic timing wrapper for sorting functions with CPU and memory monitoring.
     
     Args:
         sort_func: The sorting function to wrap
         arr: Input array to sort
         
     Returns:
-        Tuple of (sorted_array, execution_time_in_seconds, cpu_metrics)
+        Tuple of (sorted_array, execution_time_in_seconds, metrics_dict)
     """
-    return timing_wrapper_with_cpu_monitoring(sort_func, arr)
+    return timing_wrapper_with_monitoring(sort_func, arr)
 
 
 # =============================================================================
