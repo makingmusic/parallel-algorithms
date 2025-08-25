@@ -16,7 +16,7 @@ from sort import (
     POLAR_SORT,
     RUST_PARALLEL_SORT
 )
-from utils import create_unsorted_list, get_memory_usage, cleanup_memory
+from utils import create_unsorted_list, get_memory_usage, cleanup_memory, get_cpu_count
 
 CONFIG = {
     "list_size": 100_000_000,
@@ -60,7 +60,7 @@ def benchmark_sorting_algorithms():
         initial_memory = get_memory_usage()
         
         # Run the sorting algorithm
-        sorted_list, execution_time = algorithm(unsorted_list)
+        sorted_list, execution_time, cpu_metrics = algorithm(unsorted_list)
         
         # Measure final memory
         final_memory = get_memory_usage()
@@ -73,7 +73,8 @@ def benchmark_sorting_algorithms():
             'algorithm': display_name,
             'time': execution_time,
             'memory': memory_used,
-            'sorted': is_sorted
+            'sorted': is_sorted,
+            'cpu_metrics': cpu_metrics
         })
         
         print(f"  ✓ completed in {execution_time:.4f} seconds")
@@ -82,26 +83,32 @@ def benchmark_sorting_algorithms():
 
 def print_results_table(results):
     """Print results in a formatted table"""
-    print("\n" + "=" * 100)
+    print("\n" + "=" * 120)
     print("SORTING ALGORITHM BENCHMARK RESULTS")
-    print("=" * 100)
+    print("=" * 120)
     
     # Calculate column widths based on content
     max_algorithm_len = max(len(result['algorithm']) for result in results)
     algorithm_width = max(25, max_algorithm_len + 2)
     
     # Table header with proper spacing
-    print(f"{'Algorithm':<{algorithm_width}} {'Time (s)':<12} {'Memory (MB)':<15} {'Status':<12}")
-    print("-" * 100)
+    print(f"{'Algorithm':<{algorithm_width}} {'Time (s)':<12} {'Memory (MB)':<15} {'CPU Eff. (%)':<12} {'Cores Used':<12} {'Status':<12}")
+    print("-" * 120)
     
     # Sort results by execution time
     sorted_results = sorted(results, key=lambda x: x['time'])
     
     for result in sorted_results:
         status = "✓ Sorted" if result['sorted'] else "✗ Failed"
-        print(f"{result['algorithm']:<{algorithm_width}} {result['time']:<12.4f} {result['memory']:<15.2f} {status:<12}")
+        
+        # Extract CPU metrics
+        cpu_metrics = result.get('cpu_metrics', {})
+        cpu_efficiency = cpu_metrics.get('parallelization_efficiency', 0.0)
+        cores_used = cpu_metrics.get('cpu_cores_utilized', 0.0)
+        
+        print(f"{result['algorithm']:<{algorithm_width}} {result['time']:<12.4f} {result['memory']:<15.2f} {cpu_efficiency:<12.1f} {cores_used:<12.1f} {status:<12}")
     
-    print("-" * 100)
+    print("-" * 120)
     
     # Summary
     fastest = min(results, key=lambda x: x['time'])
@@ -114,6 +121,75 @@ def print_results_table(results):
     if fastest['algorithm'] != slowest['algorithm']:
         speedup = slowest['time'] / fastest['time']
         print(f"Speedup: {fastest['algorithm']} is {speedup:.1f}x faster than {slowest['algorithm']}")
+    
+    # Parallelization summary
+    print(f"\nParallelization Analysis:")
+    print(f"Available CPU cores: {get_cpu_count()}")
+    
+    # Find best parallelized algorithm
+    parallel_results = [r for r in results if r.get('cpu_metrics', {}).get('parallelization_efficiency', 0) > 0]
+    if parallel_results:
+        best_parallel = max(parallel_results, key=lambda x: x['cpu_metrics']['parallelization_efficiency'])
+        print(f"Best parallelization: {best_parallel['algorithm']} ({best_parallel['cpu_metrics']['parallelization_efficiency']:.1f}% efficiency)")
+    
+    # Show efficiency ranges
+    efficiencies = [r.get('cpu_metrics', {}).get('parallelization_efficiency', 0) for r in results]
+    if efficiencies:
+        print(f"Efficiency range: {min(efficiencies):.1f}% - {max(efficiencies):.1f}%")
+    
+    # Detailed parallelization breakdown
+    print(f"\nDetailed Parallelization Breakdown:")
+    print("-" * 80)
+    for result in results:
+        cpu_metrics = result.get('cpu_metrics', {})
+        efficiency = cpu_metrics.get('parallelization_efficiency', 0.0)
+        cores_used = cpu_metrics.get('cpu_cores_utilized', 0.0)
+        avg_cpu = cpu_metrics.get('avg_cpu_percent', 0.0)
+        max_cpu = cpu_metrics.get('max_cpu_percent', 0.0)
+        
+        if efficiency > 0:
+            print(f"{result['algorithm']:<30} {efficiency:>6.1f}% efficiency, {cores_used:>4.1f} cores, {avg_cpu:>6.1f}% avg CPU")
+        else:
+            print(f"{result['algorithm']:<30} {'GPU/Other':>6} (CPU metrics not applicable)")
+    
+    # Performance vs Parallelization analysis
+    print(f"\nPerformance vs Parallelization Analysis:")
+    print("-" * 80)
+    
+    # Find algorithms that are both fast and well-parallelized
+    fast_threshold = min(r['time'] for r in results) * 2  # Within 2x of fastest
+    efficient_threshold = 10.0  # At least 10% efficiency
+    
+    fast_and_efficient = [
+        r for r in results 
+        if r['time'] <= fast_threshold and r.get('cpu_metrics', {}).get('parallelization_efficiency', 0) >= efficient_threshold
+    ]
+    
+    if fast_and_efficient:
+        print(f"Fast AND well-parallelized algorithms (≤{fast_threshold:.3f}s, ≥{efficient_threshold}% efficiency):")
+        for result in fast_and_efficient:
+            efficiency = result['cpu_metrics']['parallelization_efficiency']
+            print(f"  • {result['algorithm']}: {result['time']:.3f}s, {efficiency:.1f}% efficiency")
+    else:
+        print(f"No algorithms are both fast (≤{fast_threshold:.3f}s) and well-parallelized (≥{efficient_threshold}% efficiency)")
+    
+    # Recommendations
+    print(f"\nRecommendations:")
+    fastest = min(results, key=lambda x: x['time'])
+    most_efficient = max(parallel_results, key=lambda x: x['cpu_metrics']['parallelization_efficiency']) if parallel_results else None
+    
+    print(f"  • For pure speed: {fastest['algorithm']} ({fastest['time']:.3f}s)")
+    if most_efficient:
+        print(f"  • For CPU utilization: {most_efficient['algorithm']} ({most_efficient['cpu_metrics']['parallelization_efficiency']:.1f}% efficiency)")
+    
+    # GPU vs CPU analysis
+    gpu_algorithms = [r for r in results if 'MLX' in r['algorithm']]
+    cpu_algorithms = [r for r in results if 'MLX' not in r['algorithm']]
+    
+    if gpu_algorithms and cpu_algorithms:
+        fastest_gpu = min(gpu_algorithms, key=lambda x: x['time'])
+        fastest_cpu = min(cpu_algorithms, key=lambda x: x['time'])
+        print(f"  • GPU vs CPU: {fastest_gpu['algorithm']} ({fastest_gpu['time']:.3f}s) vs {fastest_cpu['algorithm']} ({fastest_cpu['time']:.3f}s)")
 
 def main():
     """Main function to run the benchmarking"""

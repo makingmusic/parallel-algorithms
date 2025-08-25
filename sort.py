@@ -17,13 +17,16 @@ Algorithms included:
 import time
 import torch
 import polars as pl
-from typing import List, Tuple, Any
+from typing import List, Tuple, Any, Dict
 
 # Try importing the Rust extension module if available
 try:
     from rust_parallel import rust_parallel_sort as _rust_parallel_sort
 except Exception:
     _rust_parallel_sort = None
+
+# Import CPU monitoring utilities
+from utils import timing_wrapper_with_cpu_monitoring
 
 # =============================================================================
 # ALGORITHM CONSTANTS
@@ -58,21 +61,18 @@ ALGORITHM_DISPLAY_NAMES = {
 # UTILITY FUNCTIONS
 # =============================================================================
 
-def timing_wrapper(sort_func, arr: List[Any]) -> Tuple[List[Any], float]:
+def timing_wrapper(sort_func, arr: List[Any]) -> Tuple[List[Any], float, Dict[str, float]]:
     """
-    Generic timing wrapper for sorting functions.
+    Generic timing wrapper for sorting functions with CPU monitoring.
     
     Args:
         sort_func: The sorting function to wrap
         arr: Input array to sort
         
     Returns:
-        Tuple of (sorted_array, execution_time_in_seconds)
+        Tuple of (sorted_array, execution_time_in_seconds, cpu_metrics)
     """
-    start_time = time.time()
-    sorted_arr = sort_func(arr.copy())
-    end_time = time.time()
-    return sorted_arr, end_time - start_time
+    return timing_wrapper_with_cpu_monitoring(sort_func, arr)
 
 
 # =============================================================================
@@ -103,7 +103,7 @@ def bubble_sort_impl(arr: List[Any]) -> List[Any]:
     return sorted_arr
 
 
-def bubble_sort(arr: List[Any]) -> Tuple[List[Any], float]:
+def bubble_sort(arr: List[Any]) -> Tuple[List[Any], float, Dict[str, float]]:
     """
     Bubble sort with timing measurement.
     
@@ -111,7 +111,7 @@ def bubble_sort(arr: List[Any]) -> Tuple[List[Any], float]:
         arr: Input array to sort
         
     Returns:
-        Tuple of (sorted_array, execution_time_in_seconds)
+        Tuple of (sorted_array, execution_time_in_seconds, cpu_metrics)
     """
     return timing_wrapper(bubble_sort_impl, arr)
 
@@ -136,7 +136,7 @@ def built_in_sort_impl(arr: List[Any]) -> List[Any]:
     return sorted(arr)
 
 
-def built_in_sort(arr: List[Any]) -> Tuple[List[Any], float]:
+def built_in_sort(arr: List[Any]) -> Tuple[List[Any], float, Dict[str, float]]:
     """
     Built-in sort with timing measurement.
     
@@ -144,7 +144,7 @@ def built_in_sort(arr: List[Any]) -> Tuple[List[Any], float]:
         arr: Input array to sort
         
     Returns:
-        Tuple of (sorted_array, execution_time_in_seconds)
+        Tuple of (sorted_array, execution_time_in_seconds, cpu_metrics)
     """
     return timing_wrapper(built_in_sort_impl, arr)
 
@@ -177,7 +177,7 @@ def quick_sort_impl(arr: List[Any]) -> List[Any]:
     return quick_sort_impl(left) + middle + quick_sort_impl(right)
 
 
-def quick_sort(arr: List[Any]) -> Tuple[List[Any], float]:
+def quick_sort(arr: List[Any]) -> Tuple[List[Any], float, Dict[str, float]]:
     """
     Quick sort with timing measurement.
     
@@ -185,7 +185,7 @@ def quick_sort(arr: List[Any]) -> Tuple[List[Any], float]:
         arr: Input array to sort
         
     Returns:
-        Tuple of (sorted_array, execution_time_in_seconds)
+        Tuple of (sorted_array, execution_time_in_seconds, cpu_metrics)
     """
     return timing_wrapper(quick_sort_impl, arr)
 
@@ -244,7 +244,7 @@ def merge_sort_impl(arr: List[Any]) -> List[Any]:
     return merge(left, right)
 
 
-def merge_sort(arr: List[Any]) -> Tuple[List[Any], float]:
+def merge_sort(arr: List[Any]) -> Tuple[List[Any], float, Dict[str, float]]:
     """
     Merge sort with timing measurement.
     
@@ -252,7 +252,7 @@ def merge_sort(arr: List[Any]) -> Tuple[List[Any], float]:
         arr: Input array to sort
         
     Returns:
-        Tuple of (sorted_array, execution_time_in_seconds)
+        Tuple of (sorted_array, execution_time_in_seconds, cpu_metrics)
     """
     return timing_wrapper(merge_sort_impl, arr)
 
@@ -313,7 +313,7 @@ def heap_sort_impl(arr: List[Any]) -> List[Any]:
     return arr_copy
 
 
-def heap_sort(arr: List[Any]) -> Tuple[List[Any], float]:
+def heap_sort(arr: List[Any]) -> Tuple[List[Any], float, Dict[str, float]]:
     """
     Heap sort with timing measurement.
     
@@ -321,7 +321,7 @@ def heap_sort(arr: List[Any]) -> Tuple[List[Any], float]:
         arr: Input array to sort
         
     Returns:
-        Tuple of (sorted_array, execution_time_in_seconds)
+        Tuple of (sorted_array, execution_time_in_seconds, cpu_metrics)
     """
     return timing_wrapper(heap_sort_impl, arr)
 
@@ -352,7 +352,7 @@ def _mps_synchronize_if_needed(device: torch.device) -> None:
             pass
 
 
-def mlx_sort(arr: List[Any]) -> Tuple[List[Any], float]:
+def mlx_sort(arr: List[Any]) -> Tuple[List[Any], float, Dict[str, float]]:
     """
     Torch-based sort on MLX/MPS including CPU->GPU transfer time.
 
@@ -369,10 +369,10 @@ def mlx_sort(arr: List[Any]) -> Tuple[List[Any], float]:
         end_time = time.time()
         # Transfer result back to CPU outside timing window
         result_list = sorted_tensor.to("cpu").tolist()
-    return result_list, end_time - start_time
+    return result_list, end_time - start_time, {} # No CPU metrics for MLX sort
 
 
-def mlx_sort_preload_to_memory(arr: List[Any]) -> Tuple[List[Any], float]:
+def mlx_sort_preload_to_memory(arr: List[Any]) -> Tuple[List[Any], float, Dict[str, float]]:
     """
     Torch-based sort on MLX/MPS excluding CPU->GPU transfer time.
 
@@ -391,7 +391,7 @@ def mlx_sort_preload_to_memory(arr: List[Any]) -> Tuple[List[Any], float]:
         end_time = time.time()
         # Transfer result back to CPU outside timing window
         result_list = sorted_tensor.to("cpu").tolist()
-    return result_list, end_time - start_time
+    return result_list, end_time - start_time, {} # No CPU metrics for MLX sort
 
 # =============================================================================
 # POLAR SORT
@@ -424,7 +424,7 @@ def polar_sort_impl(arr: List[Any]) -> List[Any]:
     return sorted_series.to_list()
 
 
-def polar_sort(arr: List[Any]) -> Tuple[List[Any], float]:
+def polar_sort(arr: List[Any]) -> Tuple[List[Any], float, Dict[str, float]]:
     """
     Polars-based parallel sort with timing measurement.
     
@@ -432,7 +432,7 @@ def polar_sort(arr: List[Any]) -> Tuple[List[Any], float]:
         arr: Input array to sort
         
     Returns:
-        Tuple of (sorted_array, execution_time_in_seconds)
+        Tuple of (sorted_array, execution_time_in_seconds, cpu_metrics)
     """
     return timing_wrapper(polar_sort_impl, arr)
 
@@ -453,7 +453,7 @@ def rust_parallel_sort_impl(arr: List[Any]) -> List[Any]:
     return _rust_parallel_sort([int(x) for x in arr])
 
 
-def rust_parallel_sort(arr: List[Any]) -> Tuple[List[Any], float]:
+def rust_parallel_sort(arr: List[Any]) -> Tuple[List[Any], float, Dict[str, float]]:
     """
     Rust parallel sort with timing measurement.
     """
