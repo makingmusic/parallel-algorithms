@@ -1,0 +1,233 @@
+# Cursor Rules for Parallel Algorithms Project
+
+## Project Overview
+This is a parallel algorithms project focused on sorting algorithms with GPU acceleration (Apple MLX) and multi-core CPU optimization. The project combines Python and Rust for high-performance computing.
+
+## Code Style and Standards
+
+### Python Code
+- Use Python 3.13+ features and type hints
+- Follow PEP 8 style guidelines
+- Use descriptive variable names, especially for algorithm parameters
+- Add comprehensive docstrings for all functions and classes
+- Use type hints for all function parameters and return values
+- Prefer list comprehensions and generator expressions over explicit loops when appropriate
+
+### Rust Code
+- Follow Rust naming conventions (snake_case for variables, SCREAMING_SNAKE_CASE for constants)
+- Use meaningful variable names
+- Add documentation comments (`///`) for public functions
+- Use `cargo fmt` and `cargo clippy` for code formatting and linting
+- Prefer iterators and functional programming patterns
+
+## Architecture Guidelines
+
+### Performance-Critical Code
+- Profile code before optimizing
+- Use appropriate data structures for the task
+- Consider memory layout and cache locality
+- Document performance characteristics and complexity
+- Include benchmark results in comments for critical algorithms
+
+### Parallel Programming
+- Always consider thread safety when sharing data
+- Use appropriate synchronization primitives
+- Document parallelization strategies
+- Consider load balancing for parallel algorithms
+- Test with different input sizes and core counts
+
+### GPU Programming (MLX)
+- Handle host-to-device data transfer efficiently
+- Consider memory management and garbage collection
+- Document GPU memory usage patterns
+- Provide fallback options for non-GPU environments
+- Test with various data sizes to find optimal thresholds
+
+## File Organization
+
+### Python Files
+- `main.py`: Entry point and benchmark orchestration
+- `sort.py`: Core sorting algorithm implementations
+- `utils.py`: Utility functions and helper classes
+- `test_*.py`: Test files for specific components
+
+### Rust Files
+- `rust-parallel/src/lib.rs`: Rust extension module
+- Keep Rust code focused on performance-critical operations
+- Use PyO3 for Python bindings
+
+## Testing and Documentation
+
+### Testing
+- Write unit tests for all algorithms
+- Include performance benchmarks
+- Test edge cases (empty arrays, single elements, already sorted)
+- Test with various data types and sizes
+- Include integration tests for GPU/CPU workflows
+
+### Documentation
+- Document algorithm complexity (time and space)
+- Explain parallelization strategies
+- Include usage examples
+- Document performance characteristics
+- Add setup and installation instructions
+
+## Dependencies and Environment
+
+### Python Dependencies
+- Use `uv` as the package manager
+- Pin dependency versions for reproducibility
+- Use `pyproject.toml` for project configuration
+- Include development dependencies separately
+
+### ⚠️ IMPORTANT: Virtual Environment Usage
+- **ALWAYS activate the Python virtual environment before running any Python program**
+- Run `source .venv/bin/activate` before any Python commands
+- This is critical for the project to work correctly
+- Common failure point: forgetting to activate the venv
+
+### Rust Dependencies
+- Use `Cargo.toml` for Rust dependencies
+- Prefer stable, well-maintained crates
+- Document why specific crates are chosen
+- Use `maturin` for Python bindings
+
+## Performance Considerations
+
+### Algorithm Selection
+- Choose algorithms based on data characteristics
+- Consider parallelization overhead
+- Document when each algorithm is most effective
+- Provide automatic algorithm selection based on input
+
+### Memory Management
+- Be mindful of memory usage for large datasets
+- Use generators and iterators for memory efficiency
+- Consider in-place vs out-of-place algorithms
+- Document memory requirements
+
+### GPU Optimization
+- Batch operations when possible
+- Minimize host-to-device transfers
+- Use appropriate data types for GPU operations
+- Consider GPU memory limitations
+
+## Error Handling
+
+### Python
+- Use appropriate exception types
+- Provide meaningful error messages
+- Handle edge cases gracefully
+- Log errors with sufficient context
+
+### Rust
+- Use `Result` types for fallible operations
+- Provide detailed error information
+- Handle panics appropriately in FFI code
+- Use proper error propagation
+
+## Code Review Guidelines
+
+### Performance
+- Review for algorithmic efficiency
+- Check for unnecessary allocations
+- Verify parallelization effectiveness
+- Consider memory usage patterns
+
+### Maintainability
+- Ensure code is readable and well-documented
+- Check for proper separation of concerns
+- Verify error handling is comprehensive
+- Ensure tests cover critical paths
+
+### Security
+- Validate all inputs
+- Handle resource cleanup properly
+- Avoid potential memory leaks
+- Use safe FFI patterns
+
+## Common Patterns
+
+### Algorithm Implementation
+```python
+def algorithm_name(data: List[T], **kwargs) -> List[T]:
+    """
+    Brief description of the algorithm.
+    
+    Args:
+        data: Input data to sort
+        **kwargs: Additional algorithm-specific parameters
+        
+    Returns:
+        Sorted data
+        
+    Time Complexity: O(...)
+    Space Complexity: O(...)
+    """
+    # Implementation
+    pass
+```
+
+### Performance Monitoring
+```python
+def benchmark_algorithm(algorithm_func, data, **kwargs):
+    """Benchmark an algorithm with performance monitoring."""
+    start_time = time.perf_counter()
+    start_memory = psutil.Process().memory_info().rss
+    
+    result = algorithm_func(data, **kwargs)
+    
+    end_time = time.perf_counter()
+    end_memory = psutil.Process().memory_info().rss
+    
+    return {
+        'result': result,
+        'time': end_time - start_time,
+        'memory_delta': end_memory - start_memory
+    }
+```
+
+### Rust FFI
+```rust
+#[pyfunction]
+fn rust_parallel_sort(py: Python, data: PyReadonlyArray1<f64>) -> PyResult<PyArray1<f64>> {
+    // Implementation with proper error handling
+}
+```
+
+## Development Workflow
+
+### Setup
+1. Use `./setup.sh` for initial setup
+2. **Activate virtual environment: `source .venv/bin/activate`**
+3. Build Rust extension: `cd rust-parallel && maturin develop --release`
+
+### ⚠️ CRITICAL: Always Activate Virtual Environment
+- **Before running ANY Python program, ALWAYS run: `source .venv/bin/activate`**
+- This is the most common cause of failures in this project
+- The virtual environment contains all required dependencies
+- Without activation, Python will use system packages and fail
+
+
+### Testing
+1. **Activate virtual environment: `source .venv/bin/activate`**
+2. Run Python tests: `uv run pytest`
+3. Run Rust tests: `cd rust-parallel && cargo test`
+4. Run benchmarks: `uv run python main.py`
+
+### Code Quality
+1. **Activate virtual environment: `source .venv/bin/activate`**
+2. Format Python code: `uv run black .`
+3. Format Rust code: `cd rust-parallel && cargo fmt`
+4. Lint Rust code: `cd rust-parallel && cargo clippy`
+
+## Notes for AI Assistance
+- **CRITICAL: Always remind users to activate virtual environment with `source .venv/bin/activate` before running Python programs**
+- This project focuses on high-performance computing
+- GPU acceleration is a key feature (Apple MLX)
+- Parallel algorithms are the core focus
+- Performance benchmarking is critical
+- Both Python and Rust components need to work together seamlessly
+- Consider the trade-offs between different sorting algorithms
+- Always think about scalability and parallelization opportunities
+- **Most common failure: forgetting to activate the Python virtual environment**

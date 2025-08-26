@@ -17,12 +17,20 @@ Algorithms included:
 import time
 import torch
 import polars as pl
+import logging
 from typing import List, Tuple, Any, Dict
+
+# Set up logging for debugging
+logger = logging.getLogger(__name__)
 
 # Try importing the Rust extension module if available
 try:
     from rust_parallel import rust_parallel_sort as _rust_parallel_sort
-except Exception:
+except (ImportError, ModuleNotFoundError) as e:
+    logger.warning(f"Rust extension not available: {e}")
+    _rust_parallel_sort = None
+except Exception as e:
+    logger.error(f"Unexpected error importing Rust extension: {e}")
     _rust_parallel_sort = None
 
 # Import CPU and memory monitoring utilities
@@ -347,8 +355,10 @@ def _get_mlx_torch_device() -> torch.device:
     try:
         if torch.backends.mps.is_available() and torch.backends.mps.is_built():
             return torch.device("mps")
-    except Exception:
-        pass
+    except (RuntimeError, OSError, AttributeError) as e:
+        logger.warning(f"MPS device not available: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error checking MPS availability: {e}")
     return torch.device("cpu")
 
 
@@ -357,9 +367,11 @@ def _mps_synchronize_if_needed(device: torch.device) -> None:
     if device.type == "mps":
         try:
             torch.mps.synchronize()
-        except Exception:
+        except (RuntimeError, OSError) as e:
+            logger.warning(f"MPS synchronization failed: {e}")
             # Best-effort; if synchronize fails, continue
-            pass
+        except Exception as e:
+            logger.error(f"Unexpected error during MPS synchronization: {e}")
 
 
 def _should_use_cpu_fallback(arr: List[Any]) -> bool:

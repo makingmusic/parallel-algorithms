@@ -8,12 +8,16 @@ Test script to verify the fixes for:
 import time
 import sys
 import os
+import logging
 
 # Add the current directory to the path so we can import our modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from sort import mlx_sort, mlx_sort_preload_to_memory, bubble_sort
 from utils import timing_wrapper_with_monitoring
+
+# Set up logging for debugging
+logger = logging.getLogger(__name__)
 
 
 def test_cpu_monitoring_fix():
@@ -95,8 +99,12 @@ def test_mlx_precision_fix():
             print(f"Expected: {expected}")
             print(f"Got: {sorted_arr2}")
             
+    except (RuntimeError, ValueError, TypeError) as e:
+        logger.error(f"MLX sort failed with expected error: {e}")
+        print(f"❌ MLX precision fix: Expected error during MLX sort: {e}")
     except Exception as e:
-        print(f"❌ MLX precision fix: Error during MLX sort: {e}")
+        logger.error(f"MLX sort failed with unexpected error: {e}")
+        print(f"❌ MLX precision fix: Unexpected error during MLX sort: {e}")
 
 
 def test_mixed_data_types():
@@ -119,8 +127,12 @@ def test_mixed_data_types():
         else:
             print("❌ MLX precision fix: Mixed data types not handled correctly")
             
+    except (RuntimeError, ValueError, TypeError) as e:
+        logger.error(f"MLX sort with mixed data types failed with expected error: {e}")
+        print(f"❌ MLX precision fix: Expected error with mixed data types: {e}")
     except Exception as e:
-        print(f"❌ MLX precision fix: Error with mixed data types: {e}")
+        logger.error(f"MLX sort with mixed data types failed with unexpected error: {e}")
+        print(f"❌ MLX precision fix: Unexpected error with mixed data types: {e}")
 
 
 if __name__ == "__main__":

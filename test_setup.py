@@ -5,7 +5,11 @@ Quick test to verify the setup is working correctly.
 
 import time
 import random
+import logging
 from sort import SORTING_ALGORITHMS, BUILT_IN_SORT, POLAR_SORT, MLX_SORT
+
+# Set up logging for debugging
+logger = logging.getLogger(__name__)
 
 def test_setup():
     print("🧪 Testing setup...")
@@ -34,8 +38,12 @@ def test_setup():
             else:
                 print(f"❌ {name}: Failed to sort correctly")
                 
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError) as e:
+            logger.error(f"Algorithm {name} failed with expected error: {e}")
             print(f"❌ {name}: Error - {e}")
+        except Exception as e:
+            logger.error(f"Algorithm {name} failed with unexpected error: {e}")
+            print(f"❌ {name}: Unexpected error - {e}")
     
     print("🎉 Setup test completed!")
 

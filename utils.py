@@ -6,7 +6,12 @@ import os
 import gc
 import time
 import threading
-from typing import Dict, List, Tuple
+import logging
+from typing import Dict, List, Tuple, Optional
+
+# Set up logging for debugging thread issues
+logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger(__name__)
 
 # function that will create an unsorted list of numbers. 
 # the size of this list will be provided by the caller of this function. 
@@ -19,7 +24,7 @@ def create_unsorted_list(size, upper_bound_multiplier=10):
     # For safety, assume ~28 bytes per int (worst case, 64-bit Python).
     # 10 GB = 10 * 1024**3 = 10,737,418,240 bytes
     # MAX_REASONABLE_SIZE = 10,737,418,240 // 28 ≈ 383,479,223
-    MAX_REASONABLE_SIZE = 380_000_000_0
+    MAX_REASONABLE_SIZE = 380_000_000
     if not isinstance(size, int) or size <= 0:
         raise ValueError("Size must be a positive integer.")
     if size > MAX_REASONABLE_SIZE:
@@ -28,8 +33,33 @@ def create_unsorted_list(size, upper_bound_multiplier=10):
 
 def get_memory_usage():
     """Get current memory usage in MB"""
-    process = psutil.Process(os.getpid())
-    return process.memory_info().rss / 1024 / 1024
+    try:
+        process = psutil.Process(os.getpid())
+        return process.memory_info().rss / 1024 / 1024
+    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError) as e:
+        logger.warning(f"Failed to get memory usage: {e}")
+        return 0.0
+
+def safe_thread_join(thread: threading.Thread, timeout: float = 1.0) -> bool:
+    """
+    Safely join a thread with proper error handling.
+    
+    Args:
+        thread: Thread to join
+        timeout: Timeout in seconds
+        
+    Returns:
+        True if thread joined successfully, False otherwise
+    """
+    if not thread.is_alive():
+        return True
+    
+    try:
+        thread.join(timeout=timeout)
+        return not thread.is_alive()
+    except Exception as e:
+        logger.warning(f"Error joining thread: {e}")
+        return False
 
 def track_memory_usage(duration: float, sample_interval: float = 0.01) -> Dict[str, float]:
     """
@@ -44,30 +74,48 @@ def track_memory_usage(duration: float, sample_interval: float = 0.01) -> Dict[s
     """
     memory_samples = []
     stop_monitoring = threading.Event()
+    monitor_thread: Optional[threading.Thread] = None
     
     def memory_monitor():
-        while not stop_monitoring.is_set():
-            try:
-                memory_mb = get_memory_usage()
-                memory_samples.append(memory_mb)
-                time.sleep(sample_interval)
-            except Exception:
-                break
+        try:
+            while not stop_monitoring.is_set():
+                try:
+                    memory_mb = get_memory_usage()
+                    memory_samples.append(memory_mb)
+                    time.sleep(sample_interval)
+                except (OSError, psutil.Error) as e:
+                    logger.warning(f"Memory monitoring error: {e}")
+                    break
+                except Exception as e:
+                    logger.error(f"Unexpected error in memory monitoring: {e}")
+                    break
+        except Exception as e:
+            logger.error(f"Critical error in memory monitoring thread: {e}")
     
-    # Start monitoring in background thread
-    monitor_thread = threading.Thread(target=memory_monitor, daemon=True)
-    monitor_thread.start()
-    
-    # Wait for specified duration
-    time.sleep(duration)
-    stop_monitoring.set()
-    monitor_thread.join(timeout=1.0)
+    try:
+        # Start monitoring in background thread
+        monitor_thread = threading.Thread(target=memory_monitor, daemon=True)
+        monitor_thread.start()
+        
+        # Wait for specified duration
+        time.sleep(duration)
+    except Exception as e:
+        logger.error(f"Error during memory monitoring: {e}")
+    finally:
+        # Ensure monitoring is stopped
+        stop_monitoring.set()
+        
+        # Safely join the thread
+        if monitor_thread:
+            if not safe_thread_join(monitor_thread, timeout=2.0):
+                logger.warning("Memory monitoring thread did not terminate within timeout")
     
     if not memory_samples:
         return {
             'peak_memory_mb': 0.0,
             'avg_memory_mb': 0.0,
-            'memory_increase_mb': 0.0
+            'memory_increase_mb': 0.0,
+            'sample_count': 0
         }
     
     # Calculate metrics
@@ -85,18 +133,25 @@ def track_memory_usage(duration: float, sample_interval: float = 0.01) -> Dict[s
 
 def cleanup_memory():
     """Perform memory cleanup and garbage collection"""
-    # Force garbage collection
-    gc.collect()
-    
-    # Give the system a moment to clean up
-    # 0.1 seconds is usually sufficient for garbage collection to complete,
-    # but on some systems or under heavy memory pressure, it may not always be enough.
-    # If you observe memory not being released quickly enough, consider increasing this value.
-    time.sleep(0.1)
+    try:
+        # Force garbage collection
+        gc.collect()
+        
+        # Give the system a moment to clean up
+        # 0.1 seconds is usually sufficient for garbage collection to complete,
+        # but on some systems or under heavy memory pressure, it may not always be enough.
+        # If you observe memory not being released quickly enough, consider increasing this value.
+        time.sleep(0.1)
+    except Exception as e:
+        logger.warning(f"Error during memory cleanup: {e}")
 
 def get_cpu_count():
     """Get the number of CPU cores available"""
-    return psutil.cpu_count(logical=True)
+    try:
+        return psutil.cpu_count(logical=True) or 1
+    except Exception as e:
+        logger.warning(f"Failed to get CPU count: {e}")
+        return 1
 
 def monitor_cpu_usage(duration: float, sample_interval: float = 0.1) -> Dict[str, float]:
     """
@@ -111,29 +166,48 @@ def monitor_cpu_usage(duration: float, sample_interval: float = 0.1) -> Dict[str
     """
     cpu_samples = []
     stop_monitoring = threading.Event()
+    monitor_thread: Optional[threading.Thread] = None
     
     def cpu_monitor():
-        while not stop_monitoring.is_set():
-            try:
-                # Get per-CPU usage
-                cpu_percent = psutil.cpu_percent(interval=sample_interval, percpu=True)
-                cpu_samples.append(cpu_percent)
-            except Exception:
-                # If per-CPU fails, try overall CPU
+        try:
+            while not stop_monitoring.is_set():
                 try:
-                    overall_cpu = psutil.cpu_percent(interval=sample_interval)
-                    cpu_samples.append([overall_cpu] * psutil.cpu_count())
-                except Exception:
+                    # Get per-CPU usage
+                    cpu_percent = psutil.cpu_percent(interval=sample_interval, percpu=True)
+                    cpu_samples.append(cpu_percent)
+                except (OSError, psutil.Error) as e:
+                    logger.warning(f"CPU monitoring error: {e}")
+                    # If per-CPU fails, try overall CPU
+                    try:
+                        overall_cpu = psutil.cpu_percent(interval=sample_interval)
+                        cpu_count = get_cpu_count()
+                        cpu_samples.append([overall_cpu] * cpu_count)
+                    except Exception as fallback_error:
+                        logger.warning(f"CPU monitoring fallback also failed: {fallback_error}")
+                        break
+                except Exception as e:
+                    logger.error(f"Unexpected error in CPU monitoring: {e}")
                     break
+        except Exception as e:
+            logger.error(f"Critical error in CPU monitoring thread: {e}")
     
-    # Start monitoring in background thread
-    monitor_thread = threading.Thread(target=cpu_monitor, daemon=True)
-    monitor_thread.start()
-    
-    # Wait for specified duration
-    time.sleep(duration)
-    stop_monitoring.set()
-    monitor_thread.join(timeout=1.0)
+    try:
+        # Start monitoring in background thread
+        monitor_thread = threading.Thread(target=cpu_monitor, daemon=True)
+        monitor_thread.start()
+        
+        # Wait for specified duration
+        time.sleep(duration)
+    except Exception as e:
+        logger.error(f"Error during CPU monitoring: {e}")
+    finally:
+        # Ensure monitoring is stopped
+        stop_monitoring.set()
+        
+        # Safely join the thread
+        if monitor_thread:
+            if not safe_thread_join(monitor_thread, timeout=2.0):
+                logger.warning("CPU monitoring thread did not terminate within timeout")
     
     if not cpu_samples:
         return {
@@ -141,7 +215,8 @@ def monitor_cpu_usage(duration: float, sample_interval: float = 0.1) -> Dict[str
             'max_cpu_percent': 0.0,
             'parallelization_efficiency': 0.0,
             'cpu_cores_utilized': 0.0,
-            'cpu_count': get_cpu_count()
+            'cpu_count': get_cpu_count(),
+            'sample_count': 0
         }
     
     # Calculate metrics
@@ -150,12 +225,10 @@ def monitor_cpu_usage(duration: float, sample_interval: float = 0.1) -> Dict[str
     max_cpu_percent = max(sum(sample) for sample in cpu_samples)
     
     # Calculate parallelization efficiency
-    # Efficiency = (average CPU usage across all cores) / (number of cores * 100%)
     cpu_count = get_cpu_count()
     parallelization_efficiency = (avg_cpu_percent / (cpu_count * 100)) * 100
     
     # Estimate number of cores effectively utilized
-    # This is a rough estimate based on average CPU usage
     cpu_cores_utilized = avg_cpu_percent / 100
     
     return {
@@ -212,53 +285,90 @@ def timing_wrapper_with_monitoring(sort_func, arr: List, monitor_duration: float
     Returns:
         Tuple of (sorted_array, execution_time_in_seconds, metrics_dict)
     """
+    # Input validation
+    if arr is None:
+        raise ValueError("Input array cannot be None")
+    if not isinstance(arr, (list, tuple)):
+        raise TypeError("Input must be a list or tuple")
+    
     # Start memory and CPU monitoring before algorithm execution
     memory_samples = []
     cpu_samples = []
     stop_monitoring = threading.Event()
+    memory_thread: Optional[threading.Thread] = None
+    cpu_thread: Optional[threading.Thread] = None
     
     def memory_monitor():
-        while not stop_monitoring.is_set():
-            try:
-                memory_mb = get_memory_usage()
-                memory_samples.append(memory_mb)
-                time.sleep(0.01)  # Sample every 10ms for accuracy
-            except Exception:
-                break
+        try:
+            while not stop_monitoring.is_set():
+                try:
+                    memory_mb = get_memory_usage()
+                    memory_samples.append(memory_mb)
+                    time.sleep(0.01)  # Sample every 10ms for accuracy
+                except (OSError, psutil.Error) as e:
+                    logger.warning(f"Memory monitoring error: {e}")
+                    break
+                except Exception as e:
+                    logger.error(f"Unexpected error in memory monitoring: {e}")
+                    break
+        except Exception as e:
+            logger.error(f"Critical error in memory monitoring thread: {e}")
     
     def cpu_monitor():
-        while not stop_monitoring.is_set():
-            try:
-                # Get per-CPU usage
-                cpu_percent = psutil.cpu_percent(interval=0.01, percpu=True)
-                cpu_samples.append(cpu_percent)
-            except Exception:
-                # If per-CPU fails, try overall CPU
+        try:
+            while not stop_monitoring.is_set():
                 try:
-                    overall_cpu = psutil.cpu_percent(interval=0.01)
-                    cpu_samples.append([overall_cpu] * psutil.cpu_count())
-                except Exception:
+                    # Get per-CPU usage
+                    cpu_percent = psutil.cpu_percent(interval=0.01, percpu=True)
+                    cpu_samples.append(cpu_percent)
+                except (OSError, psutil.Error) as e:
+                    logger.warning(f"CPU monitoring error: {e}")
+                    # If per-CPU fails, try overall CPU
+                    try:
+                        overall_cpu = psutil.cpu_percent(interval=0.01)
+                        cpu_count = get_cpu_count()
+                        cpu_samples.append([overall_cpu] * cpu_count)
+                    except Exception as fallback_error:
+                        logger.warning(f"CPU monitoring fallback also failed: {fallback_error}")
+                        break
+                except Exception as e:
+                    logger.error(f"Unexpected error in CPU monitoring: {e}")
                     break
+        except Exception as e:
+            logger.error(f"Critical error in CPU monitoring thread: {e}")
     
-    # Start monitoring in background threads
-    memory_thread = threading.Thread(target=memory_monitor, daemon=True)
-    cpu_thread = threading.Thread(target=cpu_monitor, daemon=True)
-    memory_thread.start()
-    cpu_thread.start()
-    
-    # Small delay to ensure monitoring starts
-    time.sleep(0.01)
-    
-    # Run the sorting algorithm
-    start_time = time.time()
-    sorted_arr = sort_func(arr.copy())
-    end_time = time.time()
-    execution_time = end_time - start_time
-    
-    # Stop monitoring
-    stop_monitoring.set()
-    memory_thread.join(timeout=1.0)
-    cpu_thread.join(timeout=1.0)
+    try:
+        # Start monitoring in background threads
+        memory_thread = threading.Thread(target=memory_monitor, daemon=True)
+        cpu_thread = threading.Thread(target=cpu_monitor, daemon=True)
+        memory_thread.start()
+        cpu_thread.start()
+        
+        # Small delay to ensure monitoring starts
+        time.sleep(0.01)
+        
+        # Run the sorting algorithm
+        start_time = time.time()
+        sorted_arr = sort_func(arr.copy())
+        end_time = time.time()
+        execution_time = end_time - start_time
+        
+    except Exception as e:
+        logger.error(f"Error during algorithm execution: {e}")
+        execution_time = 0.0
+        sorted_arr = arr.copy()  # Return unsorted array as fallback
+    finally:
+        # Stop monitoring
+        stop_monitoring.set()
+        
+        # Safely join both threads
+        if memory_thread:
+            if not safe_thread_join(memory_thread, timeout=2.0):
+                logger.warning("Memory monitoring thread did not terminate within timeout")
+        
+        if cpu_thread:
+            if not safe_thread_join(cpu_thread, timeout=2.0):
+                logger.warning("CPU monitoring thread did not terminate within timeout")
     
     # Calculate memory metrics
     if memory_samples:
