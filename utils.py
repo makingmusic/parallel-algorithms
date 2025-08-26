@@ -212,8 +212,9 @@ def timing_wrapper_with_monitoring(sort_func, arr: List, monitor_duration: float
     Returns:
         Tuple of (sorted_array, execution_time_in_seconds, metrics_dict)
     """
-    # Start memory monitoring before algorithm execution
+    # Start memory and CPU monitoring before algorithm execution
     memory_samples = []
+    cpu_samples = []
     stop_monitoring = threading.Event()
     
     def memory_monitor():
@@ -225,9 +226,25 @@ def timing_wrapper_with_monitoring(sort_func, arr: List, monitor_duration: float
             except Exception:
                 break
     
-    # Start memory monitoring in background thread
+    def cpu_monitor():
+        while not stop_monitoring.is_set():
+            try:
+                # Get per-CPU usage
+                cpu_percent = psutil.cpu_percent(interval=0.01, percpu=True)
+                cpu_samples.append(cpu_percent)
+            except Exception:
+                # If per-CPU fails, try overall CPU
+                try:
+                    overall_cpu = psutil.cpu_percent(interval=0.01)
+                    cpu_samples.append([overall_cpu] * psutil.cpu_count())
+                except Exception:
+                    break
+    
+    # Start monitoring in background threads
     memory_thread = threading.Thread(target=memory_monitor, daemon=True)
+    cpu_thread = threading.Thread(target=cpu_monitor, daemon=True)
     memory_thread.start()
+    cpu_thread.start()
     
     # Small delay to ensure monitoring starts
     time.sleep(0.01)
@@ -238,9 +255,10 @@ def timing_wrapper_with_monitoring(sort_func, arr: List, monitor_duration: float
     end_time = time.time()
     execution_time = end_time - start_time
     
-    # Stop memory monitoring
+    # Stop monitoring
     stop_monitoring.set()
     memory_thread.join(timeout=1.0)
+    cpu_thread.join(timeout=1.0)
     
     # Calculate memory metrics
     if memory_samples:
@@ -251,16 +269,34 @@ def timing_wrapper_with_monitoring(sort_func, arr: List, monitor_duration: float
     else:
         peak_memory = avg_memory = memory_increase = 0.0
     
-    # Monitor CPU usage
-    cpu_metrics = monitor_cpu_usage(execution_time)
+    # Calculate CPU metrics from samples collected during execution
+    if cpu_samples:
+        total_cpu_percent = sum(sum(sample) for sample in cpu_samples)
+        avg_cpu_percent = total_cpu_percent / len(cpu_samples)
+        max_cpu_percent = max(sum(sample) for sample in cpu_samples)
+        
+        # Calculate parallelization efficiency
+        cpu_count = get_cpu_count()
+        parallelization_efficiency = (avg_cpu_percent / (cpu_count * 100)) * 100
+        
+        # Estimate number of cores effectively utilized
+        cpu_cores_utilized = avg_cpu_percent / 100
+    else:
+        avg_cpu_percent = max_cpu_percent = parallelization_efficiency = cpu_cores_utilized = 0.0
+        cpu_count = get_cpu_count()
     
     # Combine metrics
     combined_metrics = {
-        **cpu_metrics,
+        'avg_cpu_percent': avg_cpu_percent,
+        'max_cpu_percent': max_cpu_percent,
+        'parallelization_efficiency': parallelization_efficiency,
+        'cpu_cores_utilized': cpu_cores_utilized,
+        'cpu_count': cpu_count,
         'peak_memory_mb': peak_memory,
         'avg_memory_mb': avg_memory,
         'memory_increase_mb': memory_increase,
-        'sample_count': len(memory_samples)
+        'memory_sample_count': len(memory_samples),
+        'cpu_sample_count': len(cpu_samples)
     }
     
     return sorted_arr, execution_time, combined_metrics

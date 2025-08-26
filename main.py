@@ -19,7 +19,7 @@ from sort import (
 from utils import create_unsorted_list, get_memory_usage, cleanup_memory, get_cpu_count
 
 CONFIG = {
-    "list_size": 10_000_000,
+    "list_size": 1_000_000,
     # List of algorithm constants to test. If None, all algorithms will be tested.
     # Available constants: BUILT_IN_SORT, QUICK_SORT, BUBBLE_SORT, MERGE_SORT, HEAP_SORT, mlx_sort, mlx_sort_preload_to_memory, POLAR_SORT
     "algorithms_to_test": [

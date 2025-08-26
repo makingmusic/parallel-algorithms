@@ -362,12 +362,56 @@ def _mps_synchronize_if_needed(device: torch.device) -> None:
             pass
 
 
+def _should_use_cpu_fallback(arr: List[Any]) -> bool:
+    """
+    Determine if we should use CPU fallback instead of MLX due to data type limitations.
+    """
+    if not arr:
+        return False
+    
+    # Check for very large integers that might cause issues
+    all_integers = all(isinstance(x, int) for x in arr)
+    if all_integers:
+        min_val = min(arr)
+        max_val = max(arr)
+        
+        # If we have integers outside the safe range for MLX, use CPU fallback
+        if max_val > 2147483647 or min_val < -2147483648:
+            return True
+    
+    # Check for mixed types that might cause precision issues
+    has_floats = any(isinstance(x, float) for x in arr)
+    has_integers = any(isinstance(x, int) for x in arr)
+    
+    if has_floats and has_integers:
+        # For mixed types, always use CPU fallback to preserve precision
+        # This is because PyTorch will convert everything to float32, causing precision loss
+        return True
+    
+    return False
+
+
+def _cpu_sort_fallback(arr: List[Any]) -> List[Any]:
+    """
+    CPU-based sorting fallback that preserves precision.
+    """
+    return sorted(arr)
+
+
 def mlx_sort(arr: List[Any]) -> Tuple[List[Any], float, Dict[str, float]]:
     """
     Torch-based sort on MLX/MPS including CPU->GPU transfer time.
 
     - Measures time for: host->device transfer + sort + device->host transfer.
+    - Falls back to CPU sorting for problematic data types.
     """
+    # Check if we should use CPU fallback
+    if _should_use_cpu_fallback(arr):
+        start_time = time.time()
+        result_list = _cpu_sort_fallback(arr)
+        end_time = time.time()
+        return result_list, end_time - start_time, {}
+    
     device = _get_mlx_torch_device()
     with torch.no_grad():
         start_time = time.time()
@@ -388,7 +432,15 @@ def mlx_sort_preload_to_memory(arr: List[Any]) -> Tuple[List[Any], float, Dict[s
 
     - Preloads data to device prior to timing.
     - Measures time for: sort + device->host transfer only.
+    - Falls back to CPU sorting for problematic data types.
     """
+    # Check if we should use CPU fallback
+    if _should_use_cpu_fallback(arr):
+        start_time = time.time()
+        result_list = _cpu_sort_fallback(arr)
+        end_time = time.time()
+        return result_list, end_time - start_time, {}
+    
     device = _get_mlx_torch_device()
     with torch.no_grad():
         # Preload to device, not counted in timing
