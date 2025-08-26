@@ -1,6 +1,6 @@
 # Parallel Algorithms
 
-A comprehensive Python project for experimenting with parallel sorting algorithms, featuring GPU acceleration, multi-core CPU utilization, and performance analysis tools.
+A comprehensive Python project for experimenting with parallel sorting algorithms, featuring GPU acceleration (Apple MLX), multi-core CPU optimization, and advanced performance analysis tools.
 
 ## 🚀 Quick Setup (macOS)
 
@@ -21,8 +21,11 @@ This script will automatically:
 
 **After setup, simply run:**
 ```bash
-uv run python main.py      # Run the benchmark
-# Or activate the environment: source .venv/bin/activate
+# Run the benchmark
+uv run python main.py
+
+# Or activate the environment for interactive use
+source .venv/bin/activate
 ```
 
 **Note:** The setup script is designed for macOS. For other platforms, see the manual setup instructions below.
@@ -56,9 +59,8 @@ If you're not on macOS or prefer manual setup:
 
 5. **Build Rust extension**
    ```bash
-   pip install maturin
    cd rust-parallel
-   maturin develop --release
+   uv run maturin develop --release
    cd ..
    ```
 
@@ -69,7 +71,7 @@ If you're not on macOS or prefer manual setup:
 
 ## 🧮 Available Sorting Algorithms
 
-### GPU-Accelerated Algorithms
+### GPU-Accelerated Algorithms (Apple MLX)
 - **MLX Sort**: GPU-accelerated sorting using Apple MLX/MPS (includes host-to-device transfer time)
 - **MLX Sort (preloaded)**: GPU sorting with data preloaded to device memory (fastest for large datasets)
 
@@ -96,6 +98,7 @@ If you're not on macOS or prefer manual setup:
 - **Apple MLX Integration**: Leverages Apple Silicon GPU for sorting operations
 - **Host-to-Device Transfer Optimization**: Includes transfer time in performance metrics
 - **Preloaded Data Support**: Option to preload data to GPU memory for faster execution
+- **Precision Preservation**: Maintains integer precision for large numbers
 
 ### Multi-Core CPU Optimization
 - **Polars Integration**: Uses Rust-based Polars library for efficient parallel processing
@@ -107,7 +110,7 @@ If you're not on macOS or prefer manual setup:
 The benchmark provides comprehensive analysis including:
 
 - **Execution Time**: Precise timing for each algorithm
-- **Memory Usage**: Memory consumption during execution
+- **Memory Usage**: Memory consumption during execution (peak/increase)
 - **CPU Efficiency**: Percentage of available CPU cores effectively utilized
 - **Cores Used**: Estimated number of CPU cores utilized
 - **Parallelization Analysis**: Detailed breakdown of CPU utilization patterns
@@ -130,7 +133,11 @@ MLX Sort (incl. load)        1.8833       0.0             0.0          0.0      
 
 ### Run the Complete Benchmark
 ```bash
-uv run python main.py
+# Activate virtual environment first
+source .venv/bin/activate
+
+# Run the benchmark
+python main.py
 ```
 
 ### Configure Algorithm Selection
@@ -138,9 +145,8 @@ Edit the `CONFIG` dictionary in `main.py` to select specific algorithms:
 
 ```python
 CONFIG = {
-    "list_size": 10_000_000,
+    "list_size": 100_000_000,  # Size of test data
     "algorithms_to_test": [
-        BUILT_IN_SORT, 
         MLX_SORT, 
         MLX_SORT_PRELOAD_TO_MEMORY,
         POLAR_SORT, 
@@ -160,12 +166,22 @@ CONFIG = {
 - `POLAR_SORT`: Multi-core CPU sort using Polars
 - `RUST_PARALLEL_SORT`: True parallel sort using Rust + Rayon
 
+### Test Individual Components
+```bash
+# Test the setup
+python test_setup.py
+
+# Test specific fixes and features
+python test_fixes.py
+```
+
 ### Build the Rust Extension
 The Rust extension provides true parallel sorting via Rayon:
 
 ```bash
 cd rust-parallel
 uv run maturin develop --release
+cd ..
 ```
 
 **Note:** The setup script automatically builds this extension. Only rebuild if you modify the Rust code.
@@ -173,17 +189,17 @@ uv run maturin develop --release
 ## 📈 Performance Characteristics
 
 ### GPU Algorithms (MLX)
-- **Pros**: Fastest execution for large datasets
-- **Cons**: Don't utilize CPU cores, require Apple Silicon
+- **Pros**: Fastest execution for large datasets, zero CPU utilization
+- **Cons**: Don't utilize CPU cores, require Apple Silicon, limited to GPU memory
 - **Best for**: Large datasets where pure speed is priority
 
 ### CPU Parallel Algorithms (Polar, Rust Rayon)
-- **Pros**: Good balance of speed and CPU utilization
+- **Pros**: Good balance of speed and CPU utilization, work on any CPU
 - **Cons**: May not match GPU speed for very large datasets
 - **Best for**: General-purpose sorting with efficient resource usage
 
 ### Sequential Algorithms (Built-in, Quick, Merge, Heap)
-- **Pros**: Reliable, predictable performance
+- **Pros**: Reliable, predictable performance, work everywhere
 - **Cons**: Don't scale with multiple cores
 - **Best for**: Small datasets or when CPU resources are limited
 
@@ -204,10 +220,12 @@ parallel-algorithms/
 ├── setup.sh             # Automated setup script (macOS)
 ├── pyproject.toml       # Python dependencies and project config
 ├── requirements.txt     # Alternative dependency list
+├── test_setup.py        # Quick setup verification script
+├── test_fixes.py        # Test specific fixes and features
 ├── rust-parallel/       # Rust extension for parallel sorting
 │   ├── src/lib.rs      # Rust implementation using Rayon
 │   └── Cargo.toml      # Rust dependencies
-└── test_setup.py        # Quick setup verification script
+└── .venv/              # Python virtual environment (created by setup)
 ```
 
 ### Key Dependencies
@@ -216,6 +234,7 @@ parallel-algorithms/
 - `torch`: PyTorch backend for MLX
 - `psutil`: System monitoring
 - `maturin`: Rust extension building
+- `numpy`: Numerical computing
 
 **Note:** Dependencies are managed via `pyproject.toml` and `uv`. The `requirements.txt` file is provided for compatibility but is not the primary dependency management method.
 
@@ -240,10 +259,12 @@ Test all algorithms to understand the trade-offs between speed, memory usage, an
 **MLX Import Error:**
 - Ensure you're on Apple Silicon (M1/M2/M3) Mac
 - MLX requires macOS 13.3+ and Xcode 14.3+
+- Check that you've activated the virtual environment: `source .venv/bin/activate`
 
 **Rust Extension Build Failure:**
 - Ensure Rust is installed: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 - Rebuild: `cd rust-parallel && uv run maturin develop --release`
+- Check that you've activated the virtual environment: `source .venv/bin/activate`
 
 **Performance Issues:**
 - For best GPU performance, use `MLX_SORT_PRELOAD_TO_MEMORY`
@@ -255,6 +276,41 @@ Test all algorithms to understand the trade-offs between speed, memory usage, an
 - For other platforms, use manual setup instructions
 - Check that Homebrew and uv are properly installed
 
+**Virtual Environment Issues:**
+- **CRITICAL**: Always activate the virtual environment before running Python programs
+- Run `source .venv/bin/activate` before any Python commands
+- This is the most common cause of failures in this project
+
+## 🧪 Testing
+
+### Run All Tests
+```bash
+# Activate virtual environment
+source .venv/bin/activate
+
+# Run setup verification
+python test_setup.py
+
+# Run specific fixes tests
+python test_fixes.py
+
+# Run the main benchmark
+python main.py
+```
+
+### Test Individual Algorithms
+```python
+from sort import MLX_SORT, POLAR_SORT, BUILT_IN_SORT
+from utils import create_unsorted_list
+
+# Create test data
+test_data = create_unsorted_list(10000)
+
+# Test specific algorithm
+sorted_data, time_taken, metrics = MLX_SORT(test_data)
+print(f"MLX Sort took {time_taken:.4f} seconds")
+```
+
 ## 🤝 Contributing
 
 This project is designed for experimentation and learning about parallel algorithms. Feel free to:
@@ -262,7 +318,16 @@ This project is designed for experimentation and learning about parallel algorit
 - Improve existing implementations
 - Enhance the benchmarking tools
 - Optimize for specific hardware configurations
+- Add support for other GPU platforms
 
 ## 📝 License
 
 This project is open source and available under the MIT License.
+
+## 🔄 Recent Updates
+
+- **Enhanced CPU Monitoring**: Real-time CPU utilization tracking during algorithm execution
+- **MLX Precision Fix**: Preserves integer precision for large numbers in GPU sorting
+- **Improved Memory Tracking**: Better memory usage reporting with peak/increase metrics
+- **Rust Extension**: Added true parallel sorting with Rayon work-stealing scheduler
+- **Performance Optimizations**: Various algorithm improvements and optimizations
