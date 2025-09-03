@@ -8,6 +8,7 @@ import time
 import threading
 import logging
 from typing import Dict, List, Tuple, Optional
+from queue import Queue, Empty
 
 # Set up logging for debugging thread issues
 logging.basicConfig(level=logging.WARNING)
@@ -301,6 +302,7 @@ def timing_wrapper_with_monitoring(
 ) -> Tuple[List, float, Dict[str, float]]:
     """
     Enhanced timing wrapper that monitors both CPU and memory usage during execution.
+    Uses thread-safe queues to avoid race conditions.
 
     Args:
         sort_func: The sorting function to wrap
@@ -316,9 +318,9 @@ def timing_wrapper_with_monitoring(
     if not isinstance(arr, (list, tuple)):
         raise TypeError("Input must be a list or tuple")
 
-    # Start memory and CPU monitoring before algorithm execution
-    memory_samples = []
-    cpu_samples = []
+    # Use thread-safe queues instead of shared lists
+    memory_queue: Queue = Queue()
+    cpu_queue: Queue = Queue()
     stop_monitoring = threading.Event()
     memory_thread: Optional[threading.Thread] = None
     cpu_thread: Optional[threading.Thread] = None
@@ -328,7 +330,7 @@ def timing_wrapper_with_monitoring(
             while not stop_monitoring.is_set():
                 try:
                     memory_mb = get_memory_usage()
-                    memory_samples.append(memory_mb)
+                    memory_queue.put(memory_mb)
                     time.sleep(0.01)  # Sample every 10ms for accuracy
                 except (OSError, psutil.Error) as e:
                     logger.warning(f"Memory monitoring error: {e}")
@@ -338,6 +340,9 @@ def timing_wrapper_with_monitoring(
                     break
         except Exception as e:
             logger.error(f"Critical error in memory monitoring thread: {e}")
+        finally:
+            # Signal completion by putting None
+            memory_queue.put(None)
 
     def cpu_monitor():
         try:
@@ -345,14 +350,14 @@ def timing_wrapper_with_monitoring(
                 try:
                     # Get per-CPU usage
                     cpu_percent = psutil.cpu_percent(interval=0.01, percpu=True)
-                    cpu_samples.append(cpu_percent)
+                    cpu_queue.put(cpu_percent)
                 except (OSError, psutil.Error) as e:
                     logger.warning(f"CPU monitoring error: {e}")
                     # If per-CPU fails, try overall CPU
                     try:
                         overall_cpu = psutil.cpu_percent(interval=0.01)
                         cpu_count = get_cpu_count()
-                        cpu_samples.append([overall_cpu] * cpu_count)
+                        cpu_queue.put([overall_cpu] * cpu_count)
                     except Exception as fallback_error:
                         logger.warning(
                             f"CPU monitoring fallback also failed: {fallback_error}"
@@ -363,6 +368,9 @@ def timing_wrapper_with_monitoring(
                     break
         except Exception as e:
             logger.error(f"Critical error in CPU monitoring thread: {e}")
+        finally:
+            # Signal completion by putting None
+            cpu_queue.put(None)
 
     try:
         # Start monitoring in background threads
@@ -388,7 +396,7 @@ def timing_wrapper_with_monitoring(
         # Stop monitoring
         stop_monitoring.set()
 
-        # Safely join both threads
+        # Safely join both threads with proper timeout
         if memory_thread:
             if not safe_thread_join(memory_thread, timeout=2.0):
                 logger.warning(
@@ -399,7 +407,31 @@ def timing_wrapper_with_monitoring(
             if not safe_thread_join(cpu_thread, timeout=2.0):
                 logger.warning("CPU monitoring thread did not terminate within timeout")
 
-    # Calculate memory metrics
+    # Collect all samples from thread-safe queues
+    memory_samples = []
+    cpu_samples = []
+    
+    # Drain memory queue
+    try:
+        while True:
+            sample = memory_queue.get_nowait()
+            if sample is None:  # End marker
+                break
+            memory_samples.append(sample)
+    except Empty:
+        pass
+    
+    # Drain CPU queue
+    try:
+        while True:
+            sample = cpu_queue.get_nowait()
+            if sample is None:  # End marker
+                break
+            cpu_samples.append(sample)
+    except Empty:
+        pass
+
+    # Calculate memory metrics (now thread-safe)
     if memory_samples:
         peak_memory = max(memory_samples)
         avg_memory = sum(memory_samples) / len(memory_samples)
@@ -408,7 +440,7 @@ def timing_wrapper_with_monitoring(
     else:
         peak_memory = avg_memory = memory_increase = 0.0
 
-    # Calculate CPU metrics from samples collected during execution
+    # Calculate CPU metrics from samples collected during execution (now thread-safe)
     if cpu_samples:
         total_cpu_percent = sum(sum(sample) for sample in cpu_samples)
         avg_cpu_percent = total_cpu_percent / len(cpu_samples)
