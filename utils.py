@@ -37,22 +37,29 @@ def create_unsorted_list(size, upper_bound_multiplier=10):
 
 
 def get_memory_usage():
-    """Get current memory usage in MB"""
+    """Get current memory usage in MB with error handling"""
     try:
         process = psutil.Process(os.getpid())
-        return process.memory_info().rss / 1024 / 1024
+        memory_info = process.memory_info()
+        if memory_info:
+            return memory_info.rss / 1024 / 1024
+        return None
     except (psutil.NoSuchProcess, psutil.AccessDenied, OSError) as e:
         logger.warning(f"Failed to get memory usage: {e}")
-        return 0.0
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error getting memory usage: {e}")
+        return None
 
 
-def safe_thread_join(thread: threading.Thread, timeout: float = 1.0) -> bool:
+def safe_thread_join(thread: threading.Thread, timeout: float = 1.0, force_cleanup: bool = True) -> bool:
     """
-    Safely join a thread with proper error handling.
+    Safely join a thread with proper error handling and force cleanup.
 
     Args:
         thread: Thread to join
         timeout: Timeout in seconds
+        force_cleanup: Whether to attempt force cleanup on timeout
 
     Returns:
         True if thread joined successfully, False otherwise
@@ -62,9 +69,15 @@ def safe_thread_join(thread: threading.Thread, timeout: float = 1.0) -> bool:
 
     try:
         thread.join(timeout=timeout)
+        if thread.is_alive():
+            if force_cleanup:
+                logger.warning(f"Thread {thread.name} did not terminate, attempting force cleanup")
+                # For daemon threads, we can't force kill, but we can log and continue
+                # The process will clean them up on exit
+                return False
         return not thread.is_alive()
     except Exception as e:
-        logger.warning(f"Error joining thread: {e}")
+        logger.warning(f"Error joining thread {thread.name}: {e}")
         return False
 
 
@@ -326,58 +339,102 @@ def timing_wrapper_with_monitoring(
     cpu_thread: Optional[threading.Thread] = None
 
     def memory_monitor():
+        thread_name = "MemoryMonitor"
         try:
             while not stop_monitoring.is_set():
                 try:
                     memory_mb = get_memory_usage()
-                    memory_queue.put(memory_mb)
-                    time.sleep(0.01)  # Sample every 10ms for accuracy
+                    if memory_mb is not None:
+                        memory_queue.put(memory_mb)
+                    
+                    # Use wait with timeout instead of sleep for responsive shutdown
+                    if stop_monitoring.wait(timeout=0.01):
+                        break
                 except (OSError, psutil.Error) as e:
-                    logger.warning(f"Memory monitoring error: {e}")
-                    break
+                    logger.warning(f"{thread_name}: Memory monitoring error: {e}")
+                    # Don't break immediately, try a few more times
+                    if stop_monitoring.wait(timeout=0.1):
+                        break
                 except Exception as e:
-                    logger.error(f"Unexpected error in memory monitoring: {e}")
+                    logger.error(f"{thread_name}: Unexpected error: {e}")
                     break
         except Exception as e:
-            logger.error(f"Critical error in memory monitoring thread: {e}")
+            logger.error(f"{thread_name}: Critical error: {e}")
         finally:
-            # Signal completion by putting None
-            memory_queue.put(None)
+            # Always signal completion, even on error
+            try:
+                memory_queue.put(None)
+                logger.debug(f"{thread_name}: Thread terminated cleanly")
+            except Exception as e:
+                logger.error(f"{thread_name}: Error during cleanup: {e}")
 
     def cpu_monitor():
+        thread_name = "CPUMonitor"
         try:
             while not stop_monitoring.is_set():
                 try:
-                    # Get per-CPU usage
-                    cpu_percent = psutil.cpu_percent(interval=0.01, percpu=True)
-                    cpu_queue.put(cpu_percent)
+                    # Use non-blocking CPU monitoring to avoid hanging
+                    if stop_monitoring.is_set():
+                        break
+                        
+                    # Get per-CPU usage with shorter interval for responsiveness
+                    cpu_percent = psutil.cpu_percent(interval=0.005, percpu=True)
+                    if cpu_percent:
+                        cpu_queue.put(cpu_percent)
+                        
+                    # Check for stop signal more frequently
+                    if stop_monitoring.wait(timeout=0.005):
+                        break
+                        
                 except (OSError, psutil.Error) as e:
-                    logger.warning(f"CPU monitoring error: {e}")
-                    # If per-CPU fails, try overall CPU
-                    try:
-                        overall_cpu = psutil.cpu_percent(interval=0.01)
-                        cpu_count = get_cpu_count()
-                        cpu_queue.put([overall_cpu] * cpu_count)
-                    except Exception as fallback_error:
-                        logger.warning(
-                            f"CPU monitoring fallback also failed: {fallback_error}"
-                        )
+                    logger.warning(f"{thread_name}: CPU monitoring error: {e}")
+                    # If per-CPU fails, try overall CPU with timeout check
+                    if not stop_monitoring.is_set():
+                        try:
+                            overall_cpu = psutil.cpu_percent(interval=0.005)
+                            cpu_count = get_cpu_count()
+                            if not stop_monitoring.is_set():
+                                cpu_queue.put([overall_cpu] * cpu_count)
+                        except Exception as fallback_error:
+                            logger.warning(
+                                f"{thread_name}: Fallback failed: {fallback_error}"
+                            )
+                    # Brief pause before retry
+                    if stop_monitoring.wait(timeout=0.1):
                         break
                 except Exception as e:
-                    logger.error(f"Unexpected error in CPU monitoring: {e}")
+                    logger.error(f"{thread_name}: Unexpected error: {e}")
                     break
         except Exception as e:
-            logger.error(f"Critical error in CPU monitoring thread: {e}")
+            logger.error(f"{thread_name}: Critical error: {e}")
         finally:
-            # Signal completion by putting None
-            cpu_queue.put(None)
+            # Always signal completion, even on error
+            try:
+                cpu_queue.put(None)
+                logger.debug(f"{thread_name}: Thread terminated cleanly")
+            except Exception as e:
+                logger.error(f"{thread_name}: Error during cleanup: {e}")
 
     try:
-        # Start monitoring in background threads
-        memory_thread = threading.Thread(target=memory_monitor, daemon=True)
-        cpu_thread = threading.Thread(target=cpu_monitor, daemon=True)
+        # Start monitoring in background threads with proper names
+        memory_thread = threading.Thread(
+            target=memory_monitor, 
+            name="MemoryMonitor", 
+            daemon=True
+        )
+        cpu_thread = threading.Thread(
+            target=cpu_monitor, 
+            name="CPUMonitor", 
+            daemon=True
+        )
         memory_thread.start()
         cpu_thread.start()
+        
+        # Verify threads started successfully
+        if not memory_thread.is_alive():
+            logger.warning("Memory monitoring thread failed to start")
+        if not cpu_thread.is_alive():
+            logger.warning("CPU monitoring thread failed to start")
 
         # Small delay to ensure monitoring starts
         time.sleep(0.01)
@@ -393,43 +450,92 @@ def timing_wrapper_with_monitoring(
         execution_time = 0.0
         sorted_arr = arr.copy()  # Return unsorted array as fallback
     finally:
-        # Stop monitoring
+        # Stop monitoring with escalating timeouts
         stop_monitoring.set()
-
-        # Safely join both threads with proper timeout
-        if memory_thread:
-            if not safe_thread_join(memory_thread, timeout=2.0):
+        
+        # First attempt: gentle shutdown with normal timeout
+        memory_joined = False
+        cpu_joined = False
+        
+        if memory_thread and memory_thread.is_alive():
+            memory_joined = safe_thread_join(memory_thread, timeout=2.0)
+            if not memory_joined:
                 logger.warning(
-                    "Memory monitoring thread did not terminate within timeout"
+                    f"Memory monitoring thread ({memory_thread.name}) did not terminate within 2s timeout"
                 )
 
-        if cpu_thread:
-            if not safe_thread_join(cpu_thread, timeout=2.0):
-                logger.warning("CPU monitoring thread did not terminate within timeout")
+        if cpu_thread and cpu_thread.is_alive():
+            cpu_joined = safe_thread_join(cpu_thread, timeout=2.0)
+            if not cpu_joined:
+                logger.warning(
+                    f"CPU monitoring thread ({cpu_thread.name}) did not terminate within 2s timeout"
+                )
+        
+        # Second attempt: extended timeout for stuck threads
+        if not memory_joined and memory_thread and memory_thread.is_alive():
+            logger.info("Attempting extended shutdown for memory thread...")
+            if not safe_thread_join(memory_thread, timeout=5.0):
+                logger.error(
+                    f"Memory monitoring thread ({memory_thread.name}) is stuck and may leak resources"
+                )
+                
+        if not cpu_joined and cpu_thread and cpu_thread.is_alive():
+            logger.info("Attempting extended shutdown for CPU thread...")
+            if not safe_thread_join(cpu_thread, timeout=5.0):
+                logger.error(
+                    f"CPU monitoring thread ({cpu_thread.name}) is stuck and may leak resources"
+                )
+        
+        # Cleanup: Clear any remaining queue items to prevent memory leaks
+        try:
+            while not memory_queue.empty():
+                memory_queue.get_nowait()
+        except Empty:
+            pass
+        except Exception as e:
+            logger.warning(f"Error cleaning memory queue: {e}")
+            
+        try:
+            while not cpu_queue.empty():
+                cpu_queue.get_nowait()
+        except Empty:
+            pass
+        except Exception as e:
+            logger.warning(f"Error cleaning CPU queue: {e}")
 
     # Collect all samples from thread-safe queues
     memory_samples = []
     cpu_samples = []
     
-    # Drain memory queue
+    # Drain memory queue with timeout protection
+    queue_timeout = time.time() + 5.0  # 5 second timeout for queue draining
     try:
-        while True:
-            sample = memory_queue.get_nowait()
-            if sample is None:  # End marker
+        while time.time() < queue_timeout:
+            try:
+                sample = memory_queue.get_nowait()
+                if sample is None:  # End marker
+                    break
+                memory_samples.append(sample)
+            except Empty:
                 break
-            memory_samples.append(sample)
-    except Empty:
-        pass
+    except Exception as e:
+        logger.warning(f"Error draining memory queue: {e}")
     
-    # Drain CPU queue
+    # Drain CPU queue with timeout protection
     try:
-        while True:
-            sample = cpu_queue.get_nowait()
-            if sample is None:  # End marker
+        while time.time() < queue_timeout:
+            try:
+                sample = cpu_queue.get_nowait()
+                if sample is None:  # End marker
+                    break
+                cpu_samples.append(sample)
+            except Empty:
                 break
-            cpu_samples.append(sample)
-    except Empty:
-        pass
+    except Exception as e:
+        logger.warning(f"Error draining CPU queue: {e}")
+    
+    # Log collection statistics
+    logger.debug(f"Collected {len(memory_samples)} memory samples, {len(cpu_samples)} CPU samples")
 
     # Calculate memory metrics (now thread-safe)
     if memory_samples:
