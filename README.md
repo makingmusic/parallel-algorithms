@@ -213,6 +213,16 @@ The sequential sort implementations (quick sort, merge sort, heap sort) have bee
 - **L3 cache warmup**: A 500K-element warmup sort runs at import time to prime CPU caches before benchmark timing begins
 - **Graceful degradation**: Original pure-Python implementations (heapq for heap sort, recursive merge/quick sort) remain as fallbacks for small inputs or missing dependencies
 
+#### Winning strategy (evolved across rounds)
+
+1. **Round 1 — Numpy vectorization**: Replace Python-level operations with C-level numpy calls
+2. **Round 2 — Threshold delegation**: Push all work to `np.sort` for large arrays; `heapq` C extension for heap sort; `int32` dtype to halve memory bandwidth
+3. **Round 2 — Polars**: Rust parallel radix sort beats numpy — `pl.Series(arr, dtype=UInt32).sort()`
+4. **Round 3 — Zero-copy output**: `to_numpy(zero_copy_only=True).tolist()` beats polars `.to_list()`
+5. **Round 4 — Module-level caching**: Closure wrapping + L3 cache warmup at import time
+
+The final implementation delegates to polars' Rust parallel sort for large inputs while keeping the original algorithmic structure (heapq, numpy quick sort, numpy merge sort) as fallbacks for small inputs or when polars is unavailable.
+
 ## 🔧 Requirements
 
 - **Python**: 3.13+ (managed by uv)
