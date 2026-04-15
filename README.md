@@ -117,17 +117,25 @@ The benchmark provides comprehensive analysis including:
 - **Performance vs Parallelization**: Algorithms that are both fast and well-parallelized
 - **Recommendations**: Best algorithms for different use cases
 
-### Sample Output
+### Sample Output — Linux (10M elements)
+
+**Machine specs**: AMD Ryzen 7 2700X (8-core/16-thread, 4 online), 8 GB RAM, Ubuntu 22.04 (kernel 6.8.0), L3 cache 16 MiB
+
 ```
-Algorithm                    Time (s)     Memory (MB)     CPU Eff. (%) Cores Used   Status      
-                                          (Peak/Increase)                                       
-------------------------------------------------------------------------------------------------------------
-MLX Sort (preloaded)         0.0463       0.0             0.0          0.0          ✓ Sorted    
-Polar Sort                   0.3047       1601.1/499.2    12.4         1.0          ✓ Sorted    
-Rust Parallel Sort (Rayon)   0.3668       1528.0/383.3    10.2         0.8          ✓ Sorted    
-Built-in Sort                1.7327       820.2/233.5     17.8         1.4          ✓ Sorted    
-MLX Sort (incl. load)        1.8833       0.0             0.0          0.0          ✓ Sorted    
+List size: 10,000,000
+
+Algorithm                    Time (s)     Memory (MB)     CPU Eff. (%) Cores Used   Status
+------------------------------------------------------------------------------------------------------------------------
+Polar Sort                   0.7529       0.0             0.0          0.0          ✓ Sorted
+Rust Parallel Sort (Rayon)   0.9864       0.0             0.0          0.0          ✓ Sorted
+MLX Sort (preloaded)         1.0714       0.0             0.0          0.0          ✓ Sorted
+MLX Sort (incl. load)        1.7002       0.0             0.0          0.0          ✓ Sorted
+
+Fastest: Polar Sort (0.753s)
+Speedup: Polar Sort is 2.3x faster than MLX Sort (incl. load)
 ```
+
+> **Note**: On this Linux machine, MLX runs on CPU fallback (no Apple Silicon). On macOS with Apple Silicon, MLX Sort (preloaded) is typically the fastest algorithm.
 
 ## 🛠️ Usage
 
