@@ -1,23 +1,25 @@
 # Parallel Algorithms
 
-A comprehensive Python project for experimenting with parallel sorting algorithms, featuring GPU acceleration (Apple MLX), multi-core CPU optimization, and advanced performance analysis tools.
+A comprehensive Python project for experimenting with parallel sorting algorithms, featuring GPU acceleration (Apple MLX), multi-core CPU optimization, and advanced performance analysis tools. Supports both **macOS** (with GPU acceleration) and **Linux/Ubuntu** (CPU-only).
 
-## 🚀 Quick Setup (macOS)
+## 🚀 Quick Setup (macOS & Linux)
 
-**For a fresh MacBook, run this single command:**
+**Run the setup script:**
 
 ```bash
 ./setup.sh
 ```
 
-This script will automatically:
-- Install Homebrew (if needed)
+This script auto-detects your platform and will:
+- Install Homebrew (macOS only, if needed)
 - Install uv (Python package manager)
 - Set up Python 3.13 with virtual environment
 - Install all Python dependencies
 - Install Rust (if needed)
-- Build the Rust extension
+- Build the Rust extension (PyO3 + Rayon)
 - Verify everything works correctly
+
+On **Linux/Ubuntu**, MLX/GPU algorithms are automatically skipped — the script installs all CPU-based dependencies and the Rust extension.
 
 **After setup, simply run:**
 ```bash
@@ -28,11 +30,9 @@ uv run python main.py
 source .venv/bin/activate
 ```
 
-**Note:** The setup script is designed for macOS. For other platforms, see the manual setup instructions below.
+## 📋 Manual Setup
 
-## 📋 Manual Setup (Other Platforms)
-
-If you're not on macOS or prefer manual setup:
+If you prefer manual setup:
 
 1. **Clone the repository**
    ```bash
@@ -227,8 +227,9 @@ The final implementation delegates to polars' Rust parallel sort for large input
 
 - **Python**: 3.13+ (managed by uv)
 - **Package Manager**: uv (Python package manager)
-- **GPU**: Apple Silicon (for MLX algorithms)
-- **Dependencies**: All managed via `pyproject.toml`
+- **OS**: macOS (full feature set including GPU) or Linux/Ubuntu (CPU algorithms + Rust extension)
+- **GPU**: Apple Silicon (optional, for MLX algorithms — macOS only)
+- **Dependencies**: All managed via `pyproject.toml`. MLX/MLX-Metal are conditionally installed on macOS only (`sys_platform == 'darwin'`).
 
 ## 📁 Project Structure
 
@@ -277,7 +278,7 @@ Test all algorithms to understand the trade-offs between speed, memory usage, an
 ### Common Issues
 
 **MLX Import Error:**
-- Ensure you're on Apple Silicon (M1/M2/M3) Mac
+- MLX is macOS-only (Apple Silicon M1/M2/M3). On Linux, MLX algorithms are automatically skipped.
 - MLX requires macOS 13.3+ and Xcode 14.3+
 - Check that you've activated the virtual environment: `source .venv/bin/activate`
 
@@ -292,9 +293,9 @@ Test all algorithms to understand the trade-offs between speed, memory usage, an
 - Large datasets (>1M elements) show the biggest performance differences
 
 **Setup Script Issues:**
-- Ensure you're on macOS (setup script is macOS-specific)
-- For other platforms, use manual setup instructions
-- Check that Homebrew and uv are properly installed
+- The setup script supports both macOS and Linux/Ubuntu
+- On Linux, Homebrew is not required — only uv, Python 3.13, and Rust are installed
+- Check that uv is properly installed: `uv --version`
 
 **Virtual Environment Issues:**
 - **CRITICAL**: Always activate the virtual environment before running Python programs
@@ -347,6 +348,7 @@ This project is open source and available under the MIT License.
 ## 🔄 Recent Updates
 
 - **Evo-optimized sequential sorts (April 2026)**: Automated evolutionary optimization of quick sort, merge sort, and heap sort achieved 98.4% speedup (5.2s to 0.08s on 500K elements) by delegating to Polars' Rust parallel radix sort with UInt32 dtype, zero-copy numpy output, and module-level caching. 106 experiments evaluated across 5 optimization rounds.
+- **Linux/Ubuntu support (April 2026)**: Setup script and project now fully support Linux alongside macOS. Platform detection auto-skips MLX/GPU dependencies on Linux. All CPU-based algorithms (Polars, Rust/Rayon, optimized sequential sorts) work cross-platform.
 - **Enhanced CPU Monitoring**: Real-time CPU utilization tracking during algorithm execution
 - **MLX Precision Fix**: Preserves integer precision for large numbers in GPU sorting
 - **Improved Memory Tracking**: Better memory usage reporting with peak/increase metrics
