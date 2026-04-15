@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Parallel Algorithms Setup Script for macOS
-# This script sets up the entire project environment on a fresh MacBook
+# Parallel Algorithms Setup Script for macOS and Linux
+# This script sets up the entire project environment
 
 set -e  # Exit on any error
 
@@ -46,45 +46,50 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Check if we're on macOS
-if [[ "$OSTYPE" != "darwin"* ]]; then
-    print_error "This script is designed for macOS. Please use the manual setup instructions in README.md for other operating systems."
+# Detect platform
+arch=$(uname -m)
+IS_MACOS=false
+IS_LINUX=false
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    IS_MACOS=true
+    print_step "Detected macOS (Architecture: $arch)"
+    macos_version=$(sw_vers -productVersion)
+    print_status "macOS version: $macos_version"
+    if [[ "$arch" != "arm64" ]]; then
+        print_warning "This project is optimized for Apple Silicon (M1/M2/M3). Performance may be limited on Intel Macs."
+    fi
+elif [[ "$OSTYPE" == "linux"* ]]; then
+    IS_LINUX=true
+    print_step "Detected Linux (Architecture: $arch)"
+    print_note "MLX/GPU algorithms are macOS-only and will be skipped."
+else
+    print_error "Unsupported OS: $OSTYPE. This script supports macOS and Linux."
     exit 1
 fi
 
-print_step "Checking macOS version and architecture..."
-# Check macOS version
-macos_version=$(sw_vers -productVersion)
-print_status "macOS version: $macos_version"
+# Check if Homebrew is installed (macOS only)
+if $IS_MACOS; then
+    print_step "Checking Homebrew installation..."
+    if ! command_exists brew; then
+        print_status "Homebrew not found. Installing Homebrew..."
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# Check architecture
-arch=$(uname -m)
-print_status "Architecture: $arch"
-
-if [[ "$arch" != "arm64" ]]; then
-    print_warning "This project is optimized for Apple Silicon (M1/M2/M3). Performance may be limited on Intel Macs."
-fi
-
-# Check if Homebrew is installed
-print_step "Checking Homebrew installation..."
-if ! command_exists brew; then
-    print_status "Homebrew not found. Installing Homebrew..."
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    
-    # Add Homebrew to PATH for this session
-    if [[ -f "/opt/homebrew/bin/brew" ]]; then
-        export PATH="/opt/homebrew/bin:$PATH"
-        print_status "Added Homebrew to PATH (/opt/homebrew/bin)"
-    elif [[ -f "/usr/local/bin/brew" ]]; then
-        export PATH="/usr/local/bin:$PATH"
-        print_status "Added Homebrew to PATH (/usr/local/bin)"
+        # Add Homebrew to PATH for this session
+        if [[ -f "/opt/homebrew/bin/brew" ]]; then
+            export PATH="/opt/homebrew/bin:$PATH"
+            print_status "Added Homebrew to PATH (/opt/homebrew/bin)"
+        elif [[ -f "/usr/local/bin/brew" ]]; then
+            export PATH="/usr/local/bin:$PATH"
+            print_status "Added Homebrew to PATH (/usr/local/bin)"
+        fi
+        print_success "Homebrew installed successfully"
+    else
+        print_success "Homebrew already installed"
+        # Update Homebrew
+        print_status "Updating Homebrew..."
+        brew update >/dev/null 2>&1 || print_warning "Homebrew update failed (continuing anyway)"
     fi
-    print_success "Homebrew installed successfully"
-else
-    print_success "Homebrew already installed"
-    # Update Homebrew
-    print_status "Updating Homebrew..."
-    brew update >/dev/null 2>&1 || print_warning "Homebrew update failed (continuing anyway)"
 fi
 
 # Check if uv is installed
@@ -115,16 +120,7 @@ print_success "uv project configured"
 python_version=$(uv run python --version)
 print_success "Using $python_version (managed by uv)"
 
-# Create virtual environment and install dependencies with uv
-print_step "Creating virtual environment and installing dependencies..."
-if [ -d ".venv" ]; then
-    print_warning "Virtual environment already exists. Removing and recreating..."
-    rm -rf .venv
-fi
-
-# Install dependencies using uv
-print_status "Installing Python dependencies..."
-uv sync
+# Dependencies already installed via uv sync above
 print_success "Virtual environment created and dependencies installed with uv"
 
 # Check if Rust is installed
@@ -158,12 +154,21 @@ print_step "Verifying installation..."
 print_status "Testing Python imports..."
 uv run python -c "
 import sys
+import platform
 import polars
 import torch
-import mlx
 import numpy
 import psutil
-print('✅ All Python dependencies imported successfully')
+print('✅ Core Python dependencies imported successfully')
+
+if platform.system() == 'Darwin':
+    try:
+        import mlx
+        print('✅ MLX imported successfully')
+    except ImportError as e:
+        print(f'⚠️  MLX not available: {e}')
+else:
+    print('ℹ️  MLX skipped (macOS only)')
 
 try:
     import rust_parallel
@@ -254,19 +259,27 @@ echo "📚 Key Python Packages:"
 echo "----------------------"
 uv run python -c "
 import sys
+import platform
 import polars
 import torch
-import mlx
 import numpy
 import psutil
 import maturin
 
 print(f'polars: {polars.__version__}')
 print(f'torch: {torch.__version__}')
-print(f'mlx: {getattr(mlx, \"__version__\", \"unknown\")}')
 print(f'numpy: {numpy.__version__}')
 print(f'psutil: {psutil.__version__}')
 print(f'maturin: {getattr(maturin, \"__version__\", \"unknown\")}')
+
+if platform.system() == 'Darwin':
+    try:
+        import mlx
+        print(f'mlx: {getattr(mlx, \"__version__\", \"unknown\")}')
+    except ImportError:
+        print('mlx: not available')
+else:
+    print('mlx: skipped (macOS only)')
 "
 
 # Check if Rust extension is working
@@ -293,11 +306,15 @@ echo "uv: $(which uv)"
 echo ""
 echo "🚀 Performance Recommendations:"
 echo "-----------------------------"
-if [[ "$arch" == "arm64" ]]; then
+if $IS_MACOS && [[ "$arch" == "arm64" ]]; then
     echo "✅ Apple Silicon detected - GPU acceleration available"
     echo "💡 For best performance, use MLX_SORT_PRELOAD_TO_MEMORY"
 else
-    echo "⚠️  Intel Mac detected - GPU acceleration not available"
+    if $IS_LINUX; then
+        echo "ℹ️  Linux detected - CPU-based algorithms available"
+    else
+        echo "⚠️  Intel Mac detected - GPU acceleration not available"
+    fi
     echo "💡 For best performance, use POLAR_SORT or RUST_PARALLEL_SORT"
 fi
 
