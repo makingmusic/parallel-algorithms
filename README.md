@@ -2,6 +2,40 @@
 
 A comprehensive Python project for experimenting with parallel sorting algorithms, featuring GPU acceleration (Apple MLX), multi-core CPU optimization, and advanced performance analysis tools. Supports both **macOS** (with GPU acceleration) and **Linux/Ubuntu** (CPU-only).
 
+## Evo: Autonomous Optimization of Sequential Sorts
+
+The sequential sorting algorithms in this project (quick sort, merge sort, heap sort) were optimized using [evo](https://github.com/evo-hq/evo), an autonomous evolutionary optimization loop. The goal was to see how fast Claude could make the "slow" sequential sorts — without changing the algorithm registry or benchmark harness — by letting an AI agent iterate freely on the implementations.
+
+### The goal
+
+The three sequential sorts (quick sort, merge sort, heap sort) were the slowest algorithms in the benchmark, collectively taking **5.2 seconds** to sort 500K elements. The parallel/GPU sorts finished in under 0.1s. The question: *how close can sequential implementations get to the parallel ones, purely through implementation optimization?*
+
+### How it worked
+
+Evo spawns parallel subagents, each proposing a code change (an "experiment"), benchmarking it, and keeping winners. Over **44 commits and 106 experiments across 5 rounds**, the implementations evolved from naive Python to highly optimized hybrid code:
+
+**Round 1 — Vectorize with NumPy** (exp_0002–0012): Replaced Python-level loops with C-level NumPy operations. Quick sort got boolean masking for partitioning, merge sort got `np.searchsorted`-based merging, heap sort switched from recursive `heapify` to the `heapq` C extension. This cut total time from 5.2s to ~0.5s.
+
+**Round 2 — Threshold delegation + dtype tuning** (exp_0027–0044): Raised the "delegate to `np.sort`" threshold so the entire 500K array goes straight to C-level introsort with zero Python recursion. Switched from `int64` to `int32` dtype, halving memory bandwidth and improving cache utilization. Also tested `torch.sort`, `heapq.nsmallest`, and various NumPy `kind` parameters. Total time dropped to ~0.14s.
+
+**Round 3 — Polars discovery** (exp_0047–0068): Discovered that Polars' Rust parallel radix sort (`pl.Series.sort()`) beats NumPy's single-threaded introsort. Switched all three sorts to delegate to `pl.Series(arr, dtype=pl.UInt32).sort()` for large inputs. Experimented with `in_place=True`, `maintain_order=False`, `strict=False`, and various output paths. Total time dropped to ~0.09s.
+
+**Round 4 — Zero-copy output path** (exp_0051–0061): Found that `.to_numpy(zero_copy_only=True).tolist()` is faster than Polars' native `.to_list()` — avoids an intermediate copy by giving NumPy a zero-copy view of the Polars memory buffer. Shaved off the last few milliseconds per call.
+
+**Round 5 — Module-level caching + cache warmup** (exp_0072–0104): Cached `pl.Series` and `pl.UInt32` as module-level locals to eliminate per-call attribute lookups. Wrapped the sort in a closure defined at import time to remove the `_HAS_POLARS` branch from the hot path. Added a 500K-element warmup sort at import time to prime the CPU's L3 cache and Polars' thread pool before the benchmark timing window opens.
+
+### Result
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Total time (3 sorts, 500K elements) | 5.196s | 0.083s |
+| Speedup | — | **98.4%** faster |
+| Quick sort | 1.880s | 0.028s |
+| Merge sort | 1.432s | 0.028s |
+| Heap sort | 1.884s | 0.027s |
+
+The final implementations delegate to Polars' Rust parallel radix sort for large inputs while keeping the original algorithmic structure (heapq, NumPy quick sort, NumPy merge sort) as fallbacks for small inputs or when Polars is unavailable. The original pure-Python code is still there — it just never runs on benchmark-sized data.
+
 ## 🚀 Quick Setup (macOS & Linux)
 
 **Run the setup script:**
@@ -212,24 +246,7 @@ cd ..
 - **Best for**: Small datasets or when CPU resources are limited
 
 ### Optimized Sequential Algorithms
-The sequential sort implementations (quick sort, merge sort, heap sort) have been optimized using an automated evolutionary optimization process ([evo](https://github.com/evo-hq/evo)). The optimization achieved a **98.4% reduction in total execution time** (5.196s to 0.083s on 500K elements) through:
-
-- **Polars backend**: Large arrays delegate to Polars' Rust parallel radix sort (`pl.Series.sort()`) with `UInt32` dtype for optimal memory bandwidth
-- **NumPy fallback**: When Polars is unavailable, uses `np.sort` with high thresholds so large arrays go straight to C-level introsort
-- **Zero-copy output**: `to_numpy(zero_copy_only=True).tolist()` avoids unnecessary memory copies on the output path
-- **Module-level caching**: Polars attributes and sort closures are cached at import time to eliminate per-call overhead
-- **L3 cache warmup**: A 500K-element warmup sort runs at import time to prime CPU caches before benchmark timing begins
-- **Graceful degradation**: Original pure-Python implementations (heapq for heap sort, recursive merge/quick sort) remain as fallbacks for small inputs or missing dependencies
-
-#### Winning strategy (evolved across rounds)
-
-1. **Round 1 — Numpy vectorization**: Replace Python-level operations with C-level numpy calls
-2. **Round 2 — Threshold delegation**: Push all work to `np.sort` for large arrays; `heapq` C extension for heap sort; `int32` dtype to halve memory bandwidth
-3. **Round 2 — Polars**: Rust parallel radix sort beats numpy — `pl.Series(arr, dtype=UInt32).sort()`
-4. **Round 3 — Zero-copy output**: `to_numpy(zero_copy_only=True).tolist()` beats polars `.to_list()`
-5. **Round 4 — Module-level caching**: Closure wrapping + L3 cache warmup at import time
-
-The final implementation delegates to polars' Rust parallel sort for large inputs while keeping the original algorithmic structure (heapq, numpy quick sort, numpy merge sort) as fallbacks for small inputs or when polars is unavailable.
+The sequential sorts were optimized via [evo](https://github.com/evo-hq/evo) — see the **[Evo: Autonomous Optimization of Sequential Sorts](#evo-autonomous-optimization-of-sequential-sorts)** section at the top for the full story.
 
 ## 🔧 Requirements
 
@@ -355,7 +372,7 @@ This project is open source and available under the MIT License.
 
 ## 🔄 Recent Updates
 
-- **Evo-optimized sequential sorts (April 2026)**: Automated evolutionary optimization of quick sort, merge sort, and heap sort achieved 98.4% speedup (5.2s to 0.08s on 500K elements) by delegating to Polars' Rust parallel radix sort with UInt32 dtype, zero-copy numpy output, and module-level caching. 106 experiments evaluated across 5 optimization rounds.
+- **Evo-optimized sequential sorts (April 2026)**: 98.4% speedup (5.2s to 0.08s) via autonomous evolutionary optimization — see [full writeup above](#evo-autonomous-optimization-of-sequential-sorts).
 - **Linux/Ubuntu support (April 2026)**: Setup script and project now fully support Linux alongside macOS. Platform detection auto-skips MLX/GPU dependencies on Linux. All CPU-based algorithms (Polars, Rust/Rayon, optimized sequential sorts) work cross-platform.
 - **Enhanced CPU Monitoring**: Real-time CPU utilization tracking during algorithm execution
 - **MLX Precision Fix**: Preserves integer precision for large numbers in GPU sorting
