@@ -324,6 +324,73 @@ def print_results_table(results):
         )
 
 
+def run_correctness_eval(unsorted_list, algorithms):
+    """
+    Run a correctness eval against all algorithms.
+
+    Checks three properties for each algorithm:
+    1. Ordering — every element is <= the next
+    2. Length preservation — output has the same number of elements as input
+    3. Element preservation — output contains exactly the same elements (as a multiset)
+
+    Compares against Python's built-in sorted() as the reference.
+
+    Returns:
+        True if all algorithms pass, False otherwise.
+    """
+    print("\n" + "=" * 80)
+    print("CORRECTNESS EVAL")
+    print("=" * 80)
+
+    reference = sorted(unsorted_list)
+    all_passed = True
+
+    for name, algorithm in algorithms:
+        display_name = get_display_name(name)
+        try:
+            sorted_list, _, _ = algorithm(unsorted_list)
+
+            errors = []
+
+            # Check 1: ordering
+            is_ordered = all(
+                sorted_list[i] <= sorted_list[i + 1]
+                for i in range(len(sorted_list) - 1)
+            )
+            if not is_ordered:
+                errors.append("output is not in sorted order")
+
+            # Check 2: length preservation
+            if len(sorted_list) != len(unsorted_list):
+                errors.append(
+                    f"length mismatch: expected {len(unsorted_list)}, got {len(sorted_list)}"
+                )
+
+            # Check 3: element preservation (same multiset)
+            if sorted_list != reference:
+                if not errors:  # only report if ordering+length passed
+                    errors.append("elements differ from reference (built-in sorted)")
+
+            if errors:
+                print(f"  FAIL  {display_name}: {'; '.join(errors)}")
+                all_passed = False
+            else:
+                print(f"  PASS  {display_name}")
+
+        except Exception as e:
+            print(f"  FAIL  {display_name}: raised {type(e).__name__}: {e}")
+            all_passed = False
+
+    print("-" * 80)
+    if all_passed:
+        print("Result: ALL PASSED")
+    else:
+        print("Result: SOME FAILED")
+    print("=" * 80)
+
+    return all_passed
+
+
 def main():
     """Main function to run the benchmarking"""
     try:
@@ -338,6 +405,24 @@ def main():
 
         # Display results
         print_results_table(results)
+
+        # Run correctness eval
+        print("\nRunning correctness eval on a smaller sample...")
+        eval_size = min(CONFIG["list_size"], 500_000)
+        eval_list = create_unsorted_list(eval_size)
+
+        all_algorithms = SORTING_ALGORITHMS.items()
+        if CONFIG["algorithms_to_test"] is not None:
+            algorithms = [
+                (name, func)
+                for name, func in all_algorithms
+                if name in CONFIG["algorithms_to_test"]
+            ]
+        else:
+            algorithms = list(all_algorithms)
+
+        if not run_correctness_eval(eval_list, algorithms):
+            return 1
 
     except (ValueError, RuntimeError, OSError) as e:
         logger.error(f"Configuration or system error during benchmarking: {e}")
